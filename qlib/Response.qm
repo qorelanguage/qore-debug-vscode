@@ -1,0 +1,131 @@
+# -*- mode: qore; indent-tabs-mode: nil -*-
+
+/*  Response.qm Copyright 2017 Qore Technologies, s.r.o.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+*/
+
+%require-types
+%enable-all-warnings
+%new-style
+%strict-args
+
+module Response {
+    version = "0.1";
+    desc    = "Response";
+    author  = "Ondrej Musil <ondrej.musil@qoretechnologies.com>";
+    url     = "https://github.com/qorelanguage/qls";
+}
+
+%requires json
+
+#! Response factory.
+public class Response {
+    #! Create a response.
+    /**
+        @param request original request hash
+        @param success whether the request succeeded
+        @param body response body
+        @param msg response message (if success == False)
+     */
+    public static string make(hash request, bool success, *any body, *string msg) {
+        hash resp = {
+            "type": "response",
+            "request_seq": request.seq,
+            "command": request.command,
+            "success": success
+        };
+        if (msg)
+            resp.message = msg;
+        if (exists body)
+            resp.body = body;
+        return make_json(resp);
+    }
+
+    #! Create an ok (success) response.
+    /**
+        @param request original request hash
+        @param body response body
+     */
+    public static string ok(hash request, *any body) {
+        return Response::make(request, True, body);
+    }
+
+    #! Create an error response.
+    /**
+        @param request original request hash
+        @param body response body
+        @param msg response message (if success == False)
+     */
+    public static string error(hash request, *any body, *string msg) {
+        return Response::make(request, False, body, msg);
+    }
+}
+
+#! Error response factory.
+public class ErrorResponse {
+    public static string configurationNotDone(hash request) {
+        return Response::error(request, NOTHING, "configuration not done yet");
+    }
+
+    public static string notInitialized(hash request) {
+        return Response::error(request, NOTHING, "not initialized yet");
+    }
+
+    public static string handlerNotFound(hash request) {
+        return Response::error(request, NOTHING,
+            sprintf("no handler for command '%s' found", request.command));
+    }
+
+    public static string notSupported(hash request) {
+        return Response::error(request, NOTHING,
+            sprintf("command '%s' is not supported", request.command));
+    }
+
+    public static string invalidAttrType(hash request, string attr) {
+        return Response::error(request, NOTHING,
+            sprintf("required attribute '%s' has invalid type: %s", attr, request{attr}.type()));
+    }
+
+    public static string invalidArgType(hash request, string arg, *string type) {
+        return Response::error(request, NOTHING,
+            sprintf("required request argument '%s' has invalid type: %s",
+                arg, type ? type : request.arguments{arg}.type()));
+    }
+
+    public static string invalidArgValue(hash request, string arg, any value) {
+        return Response::error(request, NOTHING,
+            sprintf("required request argument '%s' has invalid value: %y", arg, value));
+    }
+
+    public static string missingAttr(hash request, string attr) {
+        return Response::error(request, NOTHING,
+            sprintf("missing required attribute '%s'", attr));
+    }
+
+    public static string missingArg(hash request, string arg) {
+        return Response::error(request, NOTHING,
+            sprintf("missing required request argument '%s'", arg));
+    }
+
+    public static string commandFailed(hash request, *any body) {
+        return Response::error(request, body,
+            sprintf("command '%s' failed", request.command));
+    }
+}

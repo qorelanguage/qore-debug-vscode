@@ -1,0 +1,451 @@
+# -*- mode: qore; indent-tabs-mode: nil -*-
+
+/*  RequestValidator.qm Copyright 2017 Qore Technologies, s.r.o.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+*/
+
+%require-types
+%enable-all-warnings
+%new-style
+%strict-args
+
+%allow-weak-references
+
+module RequestValidator {
+    version = "0.1";
+    desc    = "RequestValidator";
+    author  = "Ondrej Musil <ondrej.musil@qoretechnologies.com>";
+    url     = "https://github.com/qorelanguage/qls";
+}
+
+%requires ./Response.qm
+
+const PresentationHints = ("normal", "emphasize", "deemphasize");
+const ChecksumAlgorithms = ("MD5", "SHA1", "SHA256", "timestamp");
+
+public class RequestValidator {
+    #! Validates "source" argument.
+    private static *string checkSource(hash request, hash src) {
+        if (src.hasKey("name")) {
+            if (src.name.typeCode() != NT_STRING)
+                return ErrorResponse::invalidArgType(request,
+                    "source.name", src.name.type());
+        }
+        if (src.hasKey("path")) {
+            if (src.path.typeCode() != NT_STRING)
+                return ErrorResponse::invalidArgType(request,
+                    "source.path", src.path.type());
+        }
+        if (src.hasKey("sourceReference")) {
+            if (src.sourceReference.typeCode() != NT_INT)
+                return ErrorResponse::invalidArgType(request,
+                    "source.sourceReference", src.sourceReference.type());
+        }
+        if (src.hasKey("presentationHint")) {
+            if (src.presentationHint.typeCode() != NT_STRING)
+                return ErrorResponse::invalidArgType(request,
+                    "source.presentationHint", src.presentationHint.type());
+            if (!PresentationHints.contains(src.presentationHint))
+                return ErrorResponse::invalidArgValue(request,
+                    "source.presentationHint", src.presentationHint);
+        }
+        if (src.hasKey("origin")) {
+            if (src.origin.typeCode() != NT_STRING)
+                return ErrorResponse::invalidArgType(request,
+                    "source.origin", src.origin.type());
+        }
+
+        # ignore adapterData
+
+        if (src.hasKey("checksums")) {
+            if (src.checksums.typeCode() != NT_LIST)
+                return ErrorResponse::invalidArgType(request,
+                    "source.checksums", src.checksums.type());
+            list checksums := src.checksums;
+            for (int i = 0; i < checksums.size(); i++) {
+                any cs := checksums[i];
+                if (cs.typeCode() != NT_HASH)
+                    return ErrorResponse::invalidArgType(request,
+                        sprintf("source.checksums[%d]", i), cs.type());
+
+                if (!cs.hasKey("algorithm"))
+                    return ErrorResponse::missingArg(request,
+                        sprintf("source.checksums[%d].algorithm", i));
+                if (cs.algorithm.typeCode() != NT_STRING)
+                    return ErrorResponse::invalidArgType(request,
+                        "source.checksums[%d].algorithm", cs.algorithm.type());
+                if (!ChecksumAlgorithms.contains(cs.algorithm))
+                    return ErrorResponse::invalidArgValue(request,
+                        "source.checksums[%d].algorithm", cs.algorithm);
+
+                if (!cs.hasKey("checksum"))
+                    return ErrorResponse::missingArg(request,
+                        sprintf("source.checksums[%d].checksum", i));
+                if (cs.checksum.typeCode() != NT_STRING)
+                    return ErrorResponse::invalidArgType(request,
+                        "source.checksums[%d].checksum", cs.checksum.type());
+            }
+        }
+
+        return NOTHING;
+    }
+
+    #! Validates single "SourceBreakpoint" argument.
+    private static *string checkSourceBreakpoint(hash request, hash bp, int i) {
+        if (!bp.hasKey("line"))
+            return ErrorResponse::missingArg(request,
+                sprintf("breakpoints[%d]", i));
+        if (bp.line.typeCode() != NT_INT)
+            return ErrorResponse::invalidArgType(request,
+                sprintf("breakpoints[%d].line", i), bp.line.type());
+
+        if (bp.hasKey("column")) {
+            if (bp.column.typeCode() != NT_INT)
+                return ErrorResponse::invalidArgType(request,
+                    sprintf("breakpoints[%d].column", i), bp.column.type());
+        }
+        if (bp.hasKey("condition")) {
+            if (bp.condition.typeCode() != NT_STRING)
+                return ErrorResponse::invalidArgType(request,
+                    sprintf("breakpoints[%d].condition", i), bp.condition.type());
+        }
+        if (bp.hasKey("hitCondition")) {
+            if (bp.hitCondition.typeCode() != NT_STRING)
+                return ErrorResponse::invalidArgType(request,
+                    sprintf("breakpoints[%d].hitCondition", i), bp.hitCondition.type());
+        }
+
+        return NOTHING;
+    }
+
+    #! Validates "threadId" argument.
+    private static *string checkThreadId(hash request) {
+        if (!request.arguments.hasKey("threadId"))
+            return ErrorResponse::missingArg(request, "threadId");
+        if (request.arguments.threadId.typeCode() != NT_INT)
+            return ErrorResponse::invalidArgType(request, "threadId");
+        return NOTHING;
+    }
+
+    #! Validates "frameId" argument.
+    private static *string checkFrameId(hash request) {
+        if (!request.arguments.hasKey("frameId"))
+            return ErrorResponse::missingArg(request, "frameId");
+        if (request.arguments.frameId.typeCode() != NT_INT)
+            return ErrorResponse::invalidArgType(request, "frameId");
+        return NOTHING;
+    }
+
+    #! Validates InitializeRequest.
+    public static *string initialize(hash request) {
+        if (!request.arguments.hasKey("adapterID"))
+            return ErrorResponse::missingArg(request, "adapterID");
+        if (request.arguments.adapterID.typeCode() != NT_STRING)
+            return ErrorResponse::invalidArgType(request, "adapterID");
+
+        if (request.arguments.hasKey("cliendID")) {
+            if (request.arguments.cliendID.typeCode() != NT_STRING)
+                return ErrorResponse::invalidArgType(request, "cliendID");
+        }
+        if (request.arguments.hasKey("linesStartAt1")) {
+            if (request.arguments.linesStartAt1.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request, "linesStartAt1");
+        }
+        if (request.arguments.hasKey("columnsStartAt1")) {
+            if (request.arguments.columnsStartAt1.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request, "columnsStartAt1");
+        }
+        if (request.arguments.hasKey("pathFormat")) {
+            if (request.arguments.pathFormat.typeCode() != NT_STRING)
+                return ErrorResponse::invalidArgType(request, "pathFormat");
+        }
+        if (request.arguments.hasKey("supportsVariableType")) {
+            if (request.arguments.supportsVariableType.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request, "supportsVariableType");
+        }
+        if (request.arguments.hasKey("supportsVariablePaging")) {
+            if (request.arguments.supportsVariablePaging.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request, "supportsVariablePaging");
+        }
+        if (request.arguments.hasKey("supportsRunInTerminalRequest")) {
+            if (request.arguments.supportsRunInTerminalRequest.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request, "supportsRunInTerminalRequest");
+        }
+
+        return NOTHING;
+    }
+
+    #! Validates LaunchRequest.
+    public static *string launch(hash request) {
+        if (request.arguments.hasKey("noDebug")) {
+            if (request.arguments.noDebug.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request, "noDebug");
+        }
+        return NOTHING;
+    }
+
+    #! Validates DisconnectRequest.
+    public static *string disconnect(hash request) {
+        if (request.arguments.hasKey("terminateDebuggee")) {
+            if (request.arguments.terminateDebuggee.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request, "terminateDebuggee");
+        }
+        return NOTHING;
+    }
+
+    #! Validates SetBreakpointsRequest.
+    public static *string setBreakpoints(hash request) {
+        if (!request.arguments.hasKey("source"))
+            return ErrorResponse::missingArg(request, "source");
+        if (request.arguments.source.typeCode() != NT_HASH)
+            return ErrorResponse::invalidArgType(request, "source");
+        *string sourceCheck = RequestValidator::checkSource(request, request.arguments.source);
+        if (sourceCheck)
+            return sourceCheck;
+
+        if (request.arguments.hasKey("breakpoints")) {
+            if (request.arguments.breakpoints.typeCode() != NT_LIST)
+                return ErrorResponse::invalidArgType(request, "breakpoints");
+            list breakpoints := request.arguments.breakpoints;
+            for (int i = 0; i < breakpoints.size(); i++) {
+                if (breakpoints[i].typeCode() != NT_HASH)
+                    return ErrorResponse::invalidArgType(request,
+                        sprintf("breakpoints[%d]", i), breakpoints[i].type());
+                *string check = RequestValidator::checkSourceBreakpoint(request, breakpoints[i], i);
+                if (check)
+                    return check;
+            }
+        }
+        if (request.arguments.hasKey("lines")) {
+            if (request.arguments.lines.typeCode() != NT_LIST)
+                return ErrorResponse::invalidArgType(request, "lines");
+            list lines := request.arguments.lines;
+            for (int i = 0; i < lines.size(); i++) {
+                if (lines[i].typeCode() != NT_INT)
+                    return ErrorResponse::invalidArgType(request,
+                        sprintf("lines[%d]", i), lines[i].type());
+            }
+        }
+        if (request.arguments.hasKey("sourceModified")) {
+            if (request.arguments.sourceModified.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request, "sourceModified");
+        }
+
+        return NOTHING;
+    }
+
+    #! Validates ContinueRequest.
+    public static *string continueReq(hash request) {
+        return RequestValidator::checkThreadId(request);
+    }
+
+    #! Validates NextRequest.
+    public static *string next(hash request) {
+        return RequestValidator::checkThreadId(request);
+    }
+
+    #! Validates StepInRequest.
+    public static *string stepIn(hash request) {
+        *string check = RequestValidator::checkThreadId(request);
+        if (check)
+            return check;
+
+        if (request.arguments.hasKey("targetId")) {
+            if (request.arguments.targetId.typeCode() != NT_INT)
+                return ErrorResponse::invalidArgType(request, "targetId");
+        }
+
+        return NOTHING;
+    }
+
+    #! Validates StepOutRequest.
+    public static *string stepOut(hash request) {
+        return RequestValidator::checkThreadId(request);
+    }
+
+    #! Validates RestartFrameRequest. Not supported request.
+    public static *string restartFrame(hash request) {
+        return RequestValidator::checkFrameId(request);
+    }
+
+    #! Validates GotoRequest. Not supported request.
+    public static *string goto(hash request) {
+        *string check = RequestValidator::checkThreadId(request);
+        if (check)
+            return check;
+
+        if (!request.arguments.hasKey("targetId"))
+            return ErrorResponse::missingArg(request, "targetId");
+        if (request.arguments.targetId.typeCode() != NT_INT)
+            return ErrorResponse::invalidArgType(request, "targetId");
+
+        return NOTHING;
+    }
+
+    #! Validates PauseRequest.
+    public static *string pause(hash request) {
+        return RequestValidator::checkThreadId(request);
+    }
+
+    #! Validates StackTraceRequest.
+    public static *string stackTrace(hash request) {
+        *string check = RequestValidator::checkThreadId(request);
+        if (check)
+            return check;
+
+        if (request.arguments.hasKey("startFrame")) {
+            if (request.arguments.startFrame.typeCode() != NT_INT)
+                return ErrorResponse::invalidArgType(request, "startFrame");
+        }
+        if (request.arguments.hasKey("levels")) {
+            if (request.arguments.levels.typeCode() != NT_INT)
+                return ErrorResponse::invalidArgType(request, "levels");
+        }
+        if (request.arguments.hasKey("format")) {
+            hash format := request.arguments.format;
+            if (format.typeCode() != NT_HASH)
+                return ErrorResponse::invalidArgType(request, "format");
+            if (format.parameters.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request,
+                    "format.parameters", format.parameters.type());
+            if (format.parameterTypes.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request,
+                    "format.parameterTypes", format.parameterTypes.type());
+            if (format.parameterNames.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request,
+                    "format.parameterNames", format.parameterNames.type());
+            if (format.parameterValues.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request,
+                    "format.parameterValues", format.parameterValues.type());
+            if (format.line.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request,
+                    "format.line", format.line.type());
+            if (format.module.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request,
+                    "format.module", format.module.type());
+            if (format.includeAll.typeCode() != NT_BOOLEAN)
+                return ErrorResponse::invalidArgType(request,
+                    "format.includeAll", format.includeAll.type());
+        }
+
+        return NOTHING;
+    }
+
+    #! Validates ScopesRequest.
+    public static *string scopes(hash request) {
+        return RequestValidator::checkFrameId(request);
+    }
+
+    #! Validates VariablesRequest.
+    public static *string variables(hash request) {
+        if (!request.arguments.hasKey("variablesReference"))
+            return ErrorResponse::missingArg(request, "variablesReference");
+        if (request.arguments.variablesReference.typeCode() != NT_INT)
+            return ErrorResponse::invalidArgType(request, "variablesReference");
+
+        if (request.arguments.hasKey("filter")) {
+            if (request.arguments.filter.typeCode() != NT_STRING)
+                return ErrorResponse::invalidArgType(request, "filter");
+            if (!("indexed", "named").contains(request.arguments.filter))
+                return ErrorResponse::invalidArgValue(request,
+                    "filter", request.arguments.filter);
+        }
+        if (request.arguments.hasKey("start")) {
+            if (request.arguments.start.typeCode() != NT_INT)
+                return ErrorResponse::invalidArgType(request, "start");
+        }
+        if (request.arguments.hasKey("count")) {
+            if (request.arguments.count.typeCode() != NT_INT)
+                return ErrorResponse::invalidArgType(request, "count");
+        }
+        if (request.arguments.hasKey("format")) {
+            if (request.arguments.format.typeCode() != NT_HASH)
+                return ErrorResponse::invalidArgType(request, "format");
+            if (request.arguments.format.hasKey("hex")) {
+                if (request.arguments.format.hex.typeCode() != NT_BOOLEAN)
+                    return ErrorResponse::invalidArgType(request,
+                        "format.hex", request.arguments.format.hex.type());
+            }
+        }
+
+        return NOTHING;
+    }
+
+    #! Validates SourceRequest.
+    public static *string source(hash request) {
+        if (request.arguments.hasKey("source")) {
+            *string check = RequestValidator::checkSource(request, request.arguments.source);
+            if (check)
+                return check;
+        }
+
+        if (!request.arguments.hasKey("sourceReference"))
+            return ErrorResponse::missingArg(request, "sourceReference");
+        if (request.arguments.sourceReference.typeCode() != NT_INT)
+            return ErrorResponse::invalidArgType(request, "sourceReference");
+
+        return NOTHING;
+    }
+
+    #! Validates ModulesRequest.
+    public static *string modules(hash request) {
+        if (request.arguments.hasKey("startModule")) {
+            if (request.arguments.startModule.typeCode() != NT_INT)
+                return ErrorResponse::invalidArgType(request, "startModule");
+        }
+        if (request.arguments.hasKey("moduleCount")) {
+            if (request.arguments.moduleCount.typeCode() != NT_INT)
+                return ErrorResponse::invalidArgType(request, "moduleCount");
+        }
+        return NOTHING;
+    }
+
+    #! Validates EvaluateRequest.
+    public static *string evaluate(hash request) {
+        if (!request.arguments.hasKey("expression"))
+            return ErrorResponse::missingArg(request, "expression");
+        if (request.arguments.expression.typeCode() != NT_STRING)
+            return ErrorResponse::invalidArgType(request, "expression");
+
+        if (request.arguments.hasKey("frameId")) {
+            if (request.arguments.frameId.typeCode() != NT_INT)
+                return ErrorResponse::invalidArgType(request, "frameId");
+        }
+        if (request.arguments.hasKey("context")) {
+            if (request.arguments.context.typeCode() != NT_STRING)
+                return ErrorResponse::invalidArgType(request, "context");
+        }
+        if (request.arguments.hasKey("format")) {
+            if (request.arguments.format.typeCode() != NT_HASH)
+                return ErrorResponse::invalidArgType(request, "format");
+            if (request.arguments.format.hasKey("hex")) {
+                if (request.arguments.format.hex.typeCode() != NT_BOOLEAN)
+                    return ErrorResponse::invalidArgType(request,
+                        "format.hex", request.arguments.format.hex.type());
+            }
+        }
+        return NOTHING;
+    }
+
+    #! Validates ExceptionInfoRequest.
+    public static *string exceptionInfo(hash request) {
+        return RequestValidator::checkThreadId(request);
+    }
+}
