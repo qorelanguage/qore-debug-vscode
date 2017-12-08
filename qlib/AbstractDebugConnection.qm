@@ -26,13 +26,14 @@
 %new-style
 %strict-args
 
-module DebugConnection {
+module AbstractDebugConnection {
     version = "0.1";
-    desc    = "DebugConnection";
+    desc    = "AbstractDebugConnection";
     author  = "Ondrej Musil <ondrej.musil@qoretechnologies.com>";
-    url     = "https://github.com/qorelanguage/qls";
+    url     = "https://github.com/qorelanguage/qore-debug-vscode";
 }
 
+#! Debugging parameters given by VS Code
 public hashdecl DebugParams {
     #! Path to the debugged Qore program
     string programPath;
@@ -41,95 +42,41 @@ public hashdecl DebugParams {
     bool stopOnEntry;
 }
 
-#! Debug connection
-public class DebugConnection {
+#! Abstract debug connection
+public class AbstractDebugConnection {
     private {
+        # listener for debug events returned from debugger
+        DebugEventListener listener;
+
+        # debugging parameters
         hash<DebugParams> params;
     }
 
-    public constructor(hash<DebugParams> debugParams) {
+    public constructor(DebugEventListener l, hash<DebugParams> debugParams) {
+        listener l;
         params = debugParams;
-        connect();
     }
 
-    public destructor() {
-        disconnect();
-        # TODO
-    }
-
-    private connect() {
-        # TODO
-    }
-
-    public launch() {
-        # TODO
-    }
-
-    public disconnect(bool terminate = True) {
-        # TODO
-    }
+    abstract private connect();
+    abstract public launch();
+    abstract public disconnect(bool terminate = True);
 
     # CONTROL REQUESTS
 
-    public continue_(int threadId) {
-        # TODO
-    }
-
-    public next(int threadId) {
-        # TODO
-    }
-
-    public pause(int threadId) {
-        # TODO
-    }
-
-    public stepIn(int threadId, *int targetId) {
-        # TODO
-    }
-
-    public stepOut(int threadId) {
-        # TODO
-    }
+    abstract public continue_(int threadId);
+    abstract public next(int threadId);
+    abstract public pause(int threadId);
+    abstract public stepIn(int threadId, *int targetId);
+    abstract public stepOut(int threadId);
 
     # INFO REQUESTS
 
-    public hash stackTrace(int threadId, *int startFrame, *int levels, *hash format) {
-        # TODO
-        return {};
-    }
-
-    public hash scopes(int frameId) {
-        # TODO
-        return {};
-    }
-
-    public hash variables(int varRef, *string filter, *int start, *int count, *hash format) {
-        # TODO
-        return {};
-    }
-
-    public hash source(int srcRef, *hash src) {
-        # TODO
-        return {};
-    }
-
-    public hash threads() {
-        # TODO
-        return {};
-    }
-
-    public hash modules(*int start, *int count) {
-        # TODO
-        return {};
-    }
-
-    public hash evaluate(string expr, *int frameId, *string cont, *hash format) {
-        # TODO
-        return {};
-    }
-
-    public hash exceptionInfo(int threadId) {
-        # TODO
-        return {};
-    }
+    abstract public hash stackTrace(int threadId, *int startFrame, *int levels, *hash format);
+    abstract public hash scopes(int frameId);
+    abstract public hash variables(int varRef, *string filter, *int start, *int count, *hash format);
+    abstract public hash source(int srcRef, *hash src);
+    abstract public hash threads();
+    abstract public hash modules(*int start, *int count);
+    abstract public hash evaluate(string expr, *int frameId, *string cont, *hash format);
+    abstract public hash exceptionInfo(int threadId);
 }

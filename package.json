@@ -3,41 +3,40 @@
     "displayName": "Qore Debug",
     "version": "0.1.0",
     "publisher": "qoretechnologies",
-    "description": "Starter extension for developing debug adapters for VS Code.",
+    "description": "Qore language debugging support for VS Code",
     "author": {
-        "name": "Microsoft Corporation",
-        "email": "aweinand@microsoft.com"
+        "name": "Ondřej Musil",
+        "email": "ondrej.musil@qoretechnologies.com"
     },
     "license": "SEE LICENSE IN LICENSE.txt",
     "engines": {
-        "vscode": "^1.1.0",
-        "node": "^6.5.0"
+        "vscode": "^1.17.0",
+        "node": "^7.9.0"
     },
     "categories": [
         "Debuggers"
     ],
-    "private": true,
+    "homepage": "https://github.com/qorelanguage/qore-debug-vscode",
     "repository": {
         "type": "git",
-        "url": "https://github.com/Microsoft/vscode-mock-debug.git"
+        "url": "https://github.com/qorelanguage/qore-debug-vscode"
     },
     "bugs": {
-        "url": "https://github.com/Microsoft/vscode-mock-debug/issues"
+        "url": "https://github.com/qorelanguage/qore-debug-vscode/issues"
     },
     "dependencies": {
-        "vscode-debugprotocol": "^1.19.0",
-        "vscode-debugadapter": "^1.19.0"
+        "vscode-debugprotocol": "^1.24.0",
+        "vscode-debugadapter": "^1.24.0"
     },
     "devDependencies": {
-        "@types/es6-collections": "^0.5.29",
-        "@types/es6-promise": "^0.0.32",
-        "@types/mocha": "^2.2.33",
+        "@types/mocha": "^2.2.44",
         "@types/node": "^6.0.50",
-        "typescript": "^2.2.1",
-        "mocha": "^3.1.2",
-        "vscode": "^1.0.3",
-        "vscode-debugadapter-testsupport": "^1.19.0",
-        "tslint": "^5.1.0"
+        "typescript": "^2.5.3",
+        "mocha": "^3.5.0",
+        "vscode": "^1.1.6",
+        "vscode-debugadapter-testsupport": "^1.24.0",
+        "tslint": "^5.8.0",
+        "vsce": "^1.31.2"
     },
     "scripts": {
         "prepublish": "tsc -p ./src",
@@ -45,12 +44,14 @@
         "tslint": "tslint ./src/**/*.ts",
         "watch": "tsc -w -p ./src",
         "test": "mocha -u tdd ./out/tests/",
-        "postinstall": "node ./node_modules/vscode/bin/install"
+        "postinstall": "node ./node_modules/vscode/bin/install",
+        "package": "vsce package",
+        "publish": "vsce publish"
     },
     "main": "./out/extension",
     "activationEvents": [
-        "onCommand:extension.qore-debug.getProgramName",
-        "onCommand:extension.qore-debug.provideInitialConfigurations"
+        "onDebug",
+        "onCommand:extension.qore-debug-vscode.getProgramName"
     ],
     "contributes": {
         "breakpoints": [
@@ -62,14 +63,11 @@
             {
                 "type": "qore",
                 "label": "Qore Debug",
-
                 "program": "./QoreDebugAdapter.q",
                 "runtime": "qore",
-
                 "variables": {
-                    "AskForProgramName": "extension.qore-debug.getProgramName"
+                    "AskForProgramName": "extension.qore-debug-vscode.getProgramName"
                 },
-
                 "configurationSnippets": [
                     {
                         "label": "Qore Debug: Launch",
@@ -78,19 +76,20 @@
                             "type": "qore",
                             "request": "launch",
                             "name": "${2:Launch Program}",
-                            "program": "^\"\\${workspaceRoot}/${1:Program}\""
+                            "program": "^\"\\${workspaceFolder}/${1:Program}\""
                         }
                     }
                 ],
-
                 "configurationAttributes": {
                     "launch": {
-                        "required": [ "program" ],
+                        "required": [
+                            "program"
+                        ],
                         "properties": {
                             "program": {
                                 "type": "string",
                                 "description": "Absolute path to a text file.",
-                                "default": "${workspaceRoot}/${command:AskForProgramName}"
+                                "default": "${workspaceFolder}/${command:AskForProgramName}"
                             },
                             "stopOnEntry": {
                                 "type": "boolean",
@@ -105,7 +104,15 @@
                         }
                     }
                 },
-                "initialConfigurations": "extension.qore-debug.provideInitialConfigurations"
+                "initialConfigurations": [
+                    {
+                        "type": "qore",
+                        "request": "launch",
+                        "name": "Ask for file name",
+                        "program": "${workspaceFolder}/${command:AskForProgramName}",
+                        "stopOnEntry": true
+                    }
+                ]
             }
         ]
     }

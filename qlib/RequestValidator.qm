@@ -32,7 +32,7 @@ module RequestValidator {
     version = "0.1";
     desc    = "RequestValidator";
     author  = "Ondrej Musil <ondrej.musil@qoretechnologies.com>";
-    url     = "https://github.com/qorelanguage/qls";
+    url     = "https://github.com/qorelanguage/qore-debug-vscode";
 }
 
 %requires ./Response.qm

@@ -26,34 +26,13 @@
 %new-style
 %strict-args
 
-module Event {
+module DebugEventReceiver {
     version = "0.1";
-    desc    = "Event";
+    desc    = "DebugEventReceiver";
     author  = "Ondrej Musil <ondrej.musil@qoretechnologies.com>";
     url     = "https://github.com/qorelanguage/qore-debug-vscode";
 }
 
-%requires json
-
-#! Event factory.
-public class Event {
-    #! Create an event.
-    /**
-        @param eventType event type
-        @param body event body
-     */
-    public static string make(string eventType, *any body) {
-        hash event = {
-            "type": "event",
-            "event": eventType
-        };
-        if (exists body)
-            event.body = body;
-        return make_json(event);
-    }
-
-    #! Create an "initialized" event.
-    public static string initialized() {
-        return Event::make("initialized");
-    }
+public class DebugEventReceiver {
+    abstract public handleDebugEvent(auto event);
 }

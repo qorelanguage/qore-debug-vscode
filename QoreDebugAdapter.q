@@ -35,8 +35,10 @@
 
 %requires json
 
-%requires ./qlib/DebugConnection.qm
+%requires ./qlib/AbstractDebugConnection.qm
+%requires ./qlib/DebugEventReceiver.qm
 %requires ./qlib/Event.qm
+%requires ./qlib/LocalDebugConnection.qm
 %requires ./qlib/Messenger.qm
 %requires ./qlib/RequestValidator.qm
 %requires ./qlib/Response.qm
@@ -45,7 +47,7 @@
 
 %exec-class QoreDebugAdapter
 
-class QoreDebugAdapter {
+class QoreDebugAdapter inherits DebugEventReceiver {
     private {
         #! Whether QDA has been initialized ("initialize" request received).
         bool initialized = False;
@@ -81,7 +83,7 @@ class QoreDebugAdapter {
         *hash initArgs;
 
         #! Connection to the debugger
-        *DebugConnection debugger;
+        *AbstractDebugConnection debugger;
     }
 
     public constructor() {
@@ -221,7 +223,8 @@ class QoreDebugAdapter {
 
     private:internal *hash startDebugger(hash<DebugParams> params) {
         try {
-            debugger = new DebugConnection(params);
+            # TODO - depending on the parameters, start the appropriate debug connection
+            debugger = new LocalDebugConnection(self, params);
         }
         catch (hash ex) {
             return ex;
@@ -289,6 +292,10 @@ class QoreDebugAdapter {
             return (response, Event::initialized());
 
         return response;
+    }
+
+    public handleDebugEvent(auto event) {
+        # TODO
     }
 
 

@@ -1,0 +1,187 @@
+# -*- mode: qore; indent-tabs-mode: nil -*-
+
+/*  DebugConnection.qm Copyright 2017 Qore Technologies, s.r.o.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+*/
+
+%require-types
+%enable-all-warnings
+%new-style
+%strict-args
+
+module LocalDebugConnection {
+    version = "0.1";
+    desc    = "LocalDebugConnection";
+    author  = "Ondrej Musil <ondrej.musil@qoretechnologies.com>";
+    url     = "https://github.com/qorelanguage/qore-debug-vscode";
+}
+
+%requires ./AbstractDebugConnection.qm
+%requires DebugProgramControl
+
+class LocalDebugProgramControl inherits DebugProgramControl {
+    public {
+        # listener for debug events returned from debugger
+        *DebugEventListener listener;
+
+        # parent debug connection
+        LocalDebugConnection conn;
+    }
+
+    constructor(string serverName, *DebugEventListener l, LocalDebugConnection c) : DebugProgramControl(serverName) {
+        conn = c;
+        registerConnection(conn.cx);
+    }
+
+    destructor() {
+        unregisterConnection(conn.cx);
+    }
+
+    public nothing sendDataImpl(hash cx, any data) {
+        if (conn.counter.getCount() > 0) {
+            conn.threadData = data;
+            conn.counter.dec();
+        } else {
+            if (listener)
+                listener.handleDebugEvent(data);
+        }
+    }
+
+    public nothing broadcastDataImpl(any data) {
+        if (listener)
+            listener.handleDebugEvent(data);
+    }
+}
+
+#! Debug connection
+public class LocalDebugConnection inherits AbstractDebugConnection {
+    public {
+        # connection context
+        hash cx = {'id': 1};
+
+        # data
+        auto threadData;
+
+        # sync counter
+        Counter counter();
+    }
+
+    private {
+        # connection/server name for DebugProgramControl
+        string connectionName;
+
+        # debugged program
+        *DebugProgramControl dpc;
+    }
+
+    public constructor(DebugEventListener l, hash<DebugParams> debugParams) : AbstractDebugConnection(l, debugParams) {
+        connect();
+    }
+
+    public destructor() {
+        disconnect();
+        # TODO
+    }
+
+    private generateConnectionDetails() {
+        int id = abs(rand());
+        cx = {'id': id};
+        connectionName = "vscode_" + string(id);
+    }
+
+    private connect() {
+        generateConnectionDetails();
+        dpc = new LocalDebugProgramControl(connectionName, listener, self);
+        # TODO
+    }
+
+    public launch() {
+        # TODO
+    }
+
+    public disconnect(bool terminate = True) {
+        # TODO
+        delete dpc;
+    }
+
+    # CONTROL REQUESTS
+
+    public continue_(int threadId) {
+        # TODO
+    }
+
+    public next(int threadId) {
+        # TODO
+    }
+
+    public pause(int threadId) {
+        # TODO
+    }
+
+    public stepIn(int threadId, *int targetId) {
+        # TODO
+    }
+
+    public stepOut(int threadId) {
+        # TODO
+    }
+
+    # INFO REQUESTS
+
+    public hash stackTrace(int threadId, *int startFrame, *int levels, *hash format) {
+        # TODO
+        return {};
+    }
+
+    public hash scopes(int frameId) {
+        # TODO
+        return {};
+    }
+
+    public hash variables(int varRef, *string filter, *int start, *int count, *hash format) {
+        # TODO
+        return {};
+    }
+
+    public hash source(int srcRef, *hash src) {
+        # TODO
+        return {};
+    }
+
+    public hash threads() {
+        # TODO
+        return {};
+    }
+
+    public hash modules(*int start, *int count) {
+        # TODO
+        return {};
+    }
+
+    public hash evaluate(string expr, *int frameId, *string cont, *hash format) {
+        # TODO
+        return {};
+    }
+
+    public hash exceptionInfo(int threadId) {
+        # TODO
+        return {};
+    }
+}
