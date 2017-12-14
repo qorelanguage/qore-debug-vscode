@@ -1,6 +1,6 @@
 # -*- mode: qore; indent-tabs-mode: nil -*-
 
-/*  Event.qm Copyright 2017 Qore Technologies, s.r.o.
+/*  DebugEventListener.qm Copyright 2017 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -26,13 +26,13 @@
 %new-style
 %strict-args
 
-module DebugEventReceiver {
+module DebugEventListener {
     version = "0.1";
-    desc    = "DebugEventReceiver";
+    desc    = "DebugEventListener";
     author  = "Ondrej Musil <ondrej.musil@qoretechnologies.com>";
     url     = "https://github.com/qorelanguage/qore-debug-vscode";
 }
 
-public class DebugEventReceiver {
+public class DebugEventListener {
     abstract public handleDebugEvent(auto event);
 }

@@ -55,6 +55,11 @@ public class Response {
             resp.message = msg;
         if (exists body)
             resp.body = body;
+        string rsp = make_json(resp);
+        FileOutputStream fos("/home/omusil/qda.log", True);
+        string logmsg = sprintf("req: %N\nsuc: %N\nbod: %N\nmsg: %N\n->resp: %N\n---\n", request, success, body, msg, rsp);
+        fos.write(binary(logmsg));
+        fos.close();
         return make_json(resp);
     }
 

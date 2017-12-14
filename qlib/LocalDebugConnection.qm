@@ -1,6 +1,6 @@
 # -*- mode: qore; indent-tabs-mode: nil -*-
 
-/*  DebugConnection.qm Copyright 2017 Qore Technologies, s.r.o.
+/*  LocalDebugConnection.qm Copyright 2017 Qore Technologies, s.r.o.
 
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the "Software"),
@@ -26,6 +26,8 @@
 %new-style
 %strict-args
 
+%allow-debugger
+
 module LocalDebugConnection {
     version = "0.1";
     desc    = "LocalDebugConnection";
@@ -34,7 +36,40 @@ module LocalDebugConnection {
 }
 
 %requires ./AbstractDebugConnection.qm
+%requires ./DebugEventListener.qm
 %requires DebugProgramControl
+
+hashdecl ProgramInfo {
+    # script name
+    string scriptName;
+}
+
+hashdecl ThreadInfo {
+    # VSCode program ID
+    string pgmId;
+
+    # Qore tid
+    int tid;
+}
+
+hashdecl BreakpointInfo {
+    # VSCode program ID
+    string pgmId;
+
+    # enabled flag
+    bool enabled = False;
+}
+
+hashdecl DebugSession {
+    # hash of programs; keys are integer IDs for VSCode
+    hash<string, hash<ProgramInfo>> pgms;
+
+    # hash of threads; keys are integer IDs for VSCode
+    hash<string, hash<ThreadInfo>> threads;
+
+    # hash of threads; keys are integer IDs for VSCode
+    hash<string, hash<BreakpointInfo>> bps;
+}
 
 class LocalDebugProgramControl inherits DebugProgramControl {
     public {
@@ -70,6 +105,16 @@ class LocalDebugProgramControl inherits DebugProgramControl {
     }
 }
 
+public class DbgLogger inherits DebugLogger {
+    constructor() {}
+    public log(int verbosity, string fmt) {
+        FileOutputStream fos("/home/omusil/qda.debug.log", True);
+        string logmsg = vprintf(fmt+"\n", argv);
+        fos.write(binary(logmsg));
+        fos.close();
+    }
+}
+
 #! Debug connection
 public class LocalDebugConnection inherits AbstractDebugConnection {
     public {
@@ -81,6 +126,13 @@ public class LocalDebugConnection inherits AbstractDebugConnection {
 
         # sync counter
         Counter counter();
+
+        # session info
+        hash<DebugSession> session();
+
+        int pgmIdCounter = 0;
+        int threadIdCounter = 0;
+        int bpIdCounter = 0;
     }
 
     private {
@@ -100,6 +152,30 @@ public class LocalDebugConnection inherits AbstractDebugConnection {
         # TODO
     }
 
+    public *hash doCommand(hash data) {
+        if (exists data.tid) {
+            while (counter.getCount() > 0) {
+                counter.dec();
+            }
+            counter.inc();
+            threadData = NOTHING;
+        }
+
+        DbgLogger logger = dpc.logger;
+        logger.log(0, "before dpc.processCommand\n");
+        *hash ret = dpc.processCommand(cx, data);
+        logger.log(0, "after dpc.processCommand\n");
+        if (ret.type == 'thread') {
+            if (counter.waitForZero(200)) {
+                return NOTHING;
+            } else {
+                return threadData;
+            }
+        } else {
+            return ret;
+        }
+    }
+
     private generateConnectionDetails() {
         int id = abs(rand());
         cx = {'id': id};
@@ -109,22 +185,70 @@ public class LocalDebugConnection inherits AbstractDebugConnection {
     private connect() {
         generateConnectionDetails();
         dpc = new LocalDebugProgramControl(connectionName, listener, self);
+        dpc.logger = new DbgLogger();
         # TODO
     }
 
-    public launch() {
-        # TODO
+    public *hash launch() {
+        Program pgm = dpc.createProgram(params.programPath, NOTHING, list(), NOTHING);
+        #logger.log(DUV_INFO, "run program");
+        background pgm.run();
+
+        if (params.stopOnEntry) {
+            # return "stopped on entry" event
+            return {
+                "reason": "entry",
+			    "description": "stopped on entry",
+			    #"threadId": number,
+			    #"text": string,
+                "allThreadsStopped": True
+            };
+        }
+        return NOTHING;
     }
 
     public disconnect(bool terminate = True) {
         # TODO
+        DbgLogger logger = dpc.logger;
+        logger.log(0, "ldc::disconnect\n");
+        dpc.shutdown();
+        logger.log(0, "ldc::disconnect after shutdown\n");
         delete dpc;
+        logger.log(0, "ldc::disconnect after delete\n");
     }
 
     # CONTROL REQUESTS
 
     public continue_(int threadId) {
         # TODO
+        DbgLogger logger();
+        logger.log(0, "continue command: %d", threadId);
+
+        hash data.cmd = 'thread/go';
+        data.tid = threadId;
+        doCommand(data);
+        logger.log(0, "after continue command");
+
+        /*
+        'go': (
+            '*': (
+                'enum': list sub(DebugCommandLine dcl, softlist path, softlist args) {
+                    return DebugCommandLine::enumFilter(keys runStateStrings, pop path);
+                },
+                'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
+                    hash data.cmd = 'thread/go/'+pop path;
+                    data.tid = dcl.checkThreadId();
+                    dcl.doCommand(data);
+                },
+            ),
+            'desc': sprintf('go thread with specified runstate, arg: %s', (keys AbstractDebugControl::runStateStrings).join('|')),
+            'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
+                hash data.cmd = 'thread/go';
+                data.tid = dcl.checkThreadId();
+                dcl.doCommand(data);
+            },
+        ),
+        */
     }
 
     public next(int threadId) {
@@ -132,7 +256,11 @@ public class LocalDebugConnection inherits AbstractDebugConnection {
     }
 
     public pause(int threadId) {
-        # TODO
+        if (!session.threads.hasKey(string(threadId)))
+            throw "PAUSE-ERROR", sprintf("thread #%d doesn't exist", threadId);
+        string tid = string(threadId);
+        hash data.cmd = 'program/' + session.threads{tid}.pgmId + '/thread/' + tid + '/stop';
+        doCommand(data);
     }
 
     public stepIn(int threadId, *int targetId) {
@@ -147,6 +275,44 @@ public class LocalDebugConnection inherits AbstractDebugConnection {
 
     public hash stackTrace(int threadId, *int startFrame, *int levels, *hash format) {
         # TODO
+        /*
+        'bt': (
+            'desc': 'get stack for current thread',
+            'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
+                hash data.cmd = 'thread/stack';
+                data.tid = dcl.checkThreadId();
+                *hash th = dcl.doCommandImpl(data);
+                if (th) {
+                    stdout.printf("TID %d call stack:\r\n", th.tid);
+                    foreach hash lh in (th.result) {
+                        string str = sprintf(" - %d%s: ", $#, lh.current ? "*":" ");
+                        if (lh.function.val())
+                            str += sprintf("%s()", lh.function);
+                        else
+                            str += "<unknown function>";
+                        str += " (";
+                        string loc;
+                        if (lh.source)
+                            loc += sprintf("%s:%d", lh.source, lh.line + lh.offset);
+                        else {
+                            loc += sprintf("%s", lh.file ?? "<unknown>");
+                            if (lh.line > 0)
+                                loc += sprintf(":%d", lh.line);
+                        }
+                        if (lh.endline > 0)
+                            loc += sprintf("-%d", lh.endline + lh.offset);
+                        if (loc)
+                            str += loc + " ";
+                        str += lh.type;
+                        str += ")";
+                        stdout.print(str + "\r\n");
+                    }
+                }
+                else
+                    stdout.print("server returned no response\r\n");
+            },
+        ),
+        */
         return {};
     }
 
@@ -157,6 +323,49 @@ public class LocalDebugConnection inherits AbstractDebugConnection {
 
     public hash variables(int varRef, *string filter, *int start, *int count, *hash format) {
         # TODO
+        /*
+        'local': (
+            '*': (
+                'enum': list sub(DebugCommandLine dcl, softlist path, softlist args) {
+                    hash data.cmd = 'thread/local/'+pop path+'/list';
+                    data.tid = dcl.checkThreadId();
+                    *hash sd = dcl.doCommandImpl(data);
+                    return sd.result ?? ();
+                },
+                'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
+                    string var = pop path;
+                    hash data.cmd = 'thread/local/'+var+'/';
+                    data.tid = dcl.checkThreadId();
+                    if (args) {
+                        data.cmd += 'set';
+                        data.value = call_function_args(\dcl.parseValue(), args);
+                        dcl.doCommand(data);
+                        stdout.printf("%s: value set to: %y\r\n", var, data.value);
+                    } else {
+                        data.cmd += 'get';
+                        *hash vh = dcl.doCommandImpl(data);
+                        if (!vh) {
+                            stdout.printf("there is no local var %y; use \"thread local\" to list local vars in this frame\r\n", var);
+                        }
+                        else {
+                            dcl.printVar(var, vh.result.value);
+                        }
+                    }
+                },
+            ),
+
+            'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
+                hash data.cmd = 'thread/local//list';
+                data.tid = dcl.checkThreadId();
+                *list tl = dcl.doCommandImpl(data).result;
+                if (tl)
+                    stdout.printf("local vars in frame %d: %s\r\n", data.tid, (foldl $1 + ", " + $2, tl));
+                else
+                    stdout.printf("no local vars in frame %d\r\n", data.tid);
+            },
+            'desc': 'get/set local variable, args: varName [value]',
+        ),
+        */
         return {};
     }
 
@@ -165,9 +374,15 @@ public class LocalDebugConnection inherits AbstractDebugConnection {
         return {};
     }
 
-    public hash threads() {
-        # TODO
-        return {};
+    public *list threads() {
+        updateSession();
+        if (session.threads) {
+            list result;
+            map result += {"id": int($1.key), "name": getThreadName($1.key, $1.value)}, session.threads.pairIterator();
+            return result;
+        }
+
+        return NOTHING;
     }
 
     public hash modules(*int start, *int count) {
@@ -183,5 +398,62 @@ public class LocalDebugConnection inherits AbstractDebugConnection {
     public hash exceptionInfo(int threadId) {
         # TODO
         return {};
+    }
+
+    int getFreePgmId() {
+        return pgmIdCounter++;
+    }
+
+    int getFreeThreadId() {
+        return threadIdCounter++;
+    }
+
+    int getFreeBpId() {
+        return bpIdCounter++;
+    }
+
+    string getThreadName(softstring tid, hash<ThreadInfo> ti) {
+        return "P" + ti.pgmId + "-T" + tid;
+    }
+
+    *string findProgramIdByKey(string pgmKey) {
+        foreach auto pgm in (session.pgms.pairIterator()) {
+            if (pgm.value.name == pgmKey)
+                return pgm.key;
+        }
+        return NOTHING;
+    }
+
+    private updateSession() {
+        hash data.cmd = 'session/get';
+        DbgLogger logger();
+        *hash sh = doCommand(data).result;
+        logger.log(0, "got session: %N", sh);
+        if (sh) {
+            foreach hash ph in (sh.pairIterator()) {
+
+                #*string pgmId = findProgramIdByKey(ph.key);
+                string pgmId = ph.key;
+                #if (pgmId) {
+                if (session.pgms{ph.key}) {
+                    #
+                    #session.pgms{id}
+                }
+                else {
+                    #pgmId = string(getFreePgmId());
+                    session.pgms{pgmId} = new hash<ProgramInfo>(cast<hash<ProgramInfo>>({"scriptName": ph.value.scriptName}));
+                    foreach auto th in (ph.value.interrupted) {
+                        string tid = string(th);
+                        session.threads{tid} = new hash<ThreadInfo>({"pgmId": pgmId});
+                    }
+                    foreach hash bp in (ph.value.breakpoints) {
+                        string bpid = string(getFreeBpId());
+                        session.bps{bpid} = new hash<BreakpointInfo>(cast<hash<BreakpointInfo>>({"pgmId": pgmId, "enabled": bp.enabled}));
+                    }
+                }
+            }
+        }
+        else
+            session = new hash<DebugSession>();
     }
 }

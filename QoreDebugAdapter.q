@@ -36,7 +36,7 @@
 %requires json
 
 %requires ./qlib/AbstractDebugConnection.qm
-%requires ./qlib/DebugEventReceiver.qm
+%requires ./qlib/DebugEventListener.qm
 %requires ./qlib/Event.qm
 %requires ./qlib/LocalDebugConnection.qm
 %requires ./qlib/Messenger.qm
@@ -47,7 +47,7 @@
 
 %exec-class QoreDebugAdapter
 
-class QoreDebugAdapter inherits DebugEventReceiver {
+class QoreDebugAdapter inherits DebugEventListener {
     private {
         #! Whether QDA has been initialized ("initialize" request received).
         bool initialized = False;
@@ -232,10 +232,16 @@ class QoreDebugAdapter inherits DebugEventReceiver {
         return NOTHING;
     }
 
-    private:internal quitDebugger(bool terminate = True) {
-        if (debugger)
-            debugger.disconnect(terminate);
-        delete debugger;
+    private:internal *hash quitDebugger(bool terminate = True) {
+        try {
+            if (debugger)
+                debugger.disconnect(terminate);
+            delete debugger;
+        }
+        catch (hash ex) {
+            return ex;
+        }
+        return NOTHING;
     }
 
 
@@ -246,16 +252,21 @@ class QoreDebugAdapter inherits DebugEventReceiver {
     public int main() {
         while (running) {
             # read JSON-RPC request
+            log(2, "waiting for request");
             hash received = Messenger::receive();
+            log(2, "received smtg");
             if (received.error)
                 error(received.error);
 
             # handle the request
+            log(2, "handling request");
             softlist responses = handleRequest(received.msg);
+            log(2, "handling finished");
 
             # send back responses if any
             if (responses.size()) {
                 map Messenger::send($1), responses;
+                log(2, "response(s) sent");
             }
         }
 
@@ -284,7 +295,7 @@ class QoreDebugAdapter inherits DebugEventReceiver {
             return ErrorResponse::handlerNotFound(request);
 
         # call appropriate request handler method
-        *string response = requestMap{request.command}(request);
+        auto response = requestMap{request.command}(request);
         log(2, "resp: %N", response);
 
         # check for "initialize" request and send "initialized" event
@@ -319,7 +330,7 @@ class QoreDebugAdapter inherits DebugEventReceiver {
     }
 
     #! "launch" request handler
-    private:internal *string req_launch(hash request) {
+    private:internal auto req_launch(hash request) {
         log(0, "launch request received");
         # validate request
         *string validation = RequestValidator::launch(request);
@@ -335,7 +346,22 @@ class QoreDebugAdapter inherits DebugEventReceiver {
         # create debug connection
         *hash result = startDebugger(params);
         if (result)
-            return Response::error(request, result, "error during program launch");
+            return Response::error(request, result, "error starting debugger");
+
+        # try launching
+        try {
+            result = debugger.launch();
+        }
+        catch (hash<ExceptionInfo> ex) {
+            return Response::error(request, ex, "error during program launch");
+        }
+
+        # return result if possible
+        if (result) {
+            if (result.reason == "entry")
+                return (Response::ok(request), Event::make("stopped", result));
+            return Response::error(request, result, "error during program launch - unknown result value");
+        }
 
         return Response::ok(request);
     }
@@ -357,8 +383,12 @@ class QoreDebugAdapter inherits DebugEventReceiver {
     #! "disconnect" request handler
     private:internal *string req_disconnect(hash request) {
         log(0, "disconnect request received");
-        quitDebugger();
         running = False;
+        *hash result = quitDebugger();
+        log(0, "tried disconnecting: %N", result);
+        if (result)
+            return Response::error(request, result, "error disconnecting debugger");
+
         return Response::ok(request);
     }
 
@@ -404,6 +434,7 @@ class QoreDebugAdapter inherits DebugEventReceiver {
         # TODO
         if (!configurationDone)
             ErrorResponse::configurationNotDone(request);
+
         # validate request
         *string validation = RequestValidator::continueReq(request);
         if (validation)
@@ -615,15 +646,15 @@ class QoreDebugAdapter inherits DebugEventReceiver {
     #! "threads" request handler
     private:internal *string req_threads(hash request) {
         # call the debugger
-        hash body;
+        *list threads;
         try {
-            body = debugger.threads();
+            threads = debugger.threads();
         }
         catch(ex) {
             return ErrorResponse::commandFailed(request, ex);
         }
 
-        return Response::ok(request, body);
+        return Response::ok(request, {"threads": threads});
     }
 
     #! "modules" request handler
