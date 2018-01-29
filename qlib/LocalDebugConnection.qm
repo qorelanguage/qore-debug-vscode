@@ -35,9 +35,13 @@ module LocalDebugConnection {
     url     = "https://github.com/qorelanguage/qore-debug-vscode";
 }
 
+%requires process
+%requires yaml
+
 %requires ./AbstractDebugConnection.qm
 %requires ./DebugEventListener.qm
-%requires DebugProgramControl
+%requires DebugUtil
+%requires WebSocketClient
 
 hashdecl ProgramInfo {
     # script name
@@ -71,7 +75,7 @@ hashdecl DebugSession {
     hash<string, hash<BreakpointInfo>> bps;
 }
 
-class LocalDebugProgramControl inherits DebugProgramControl {
+/*class LocalDebugProgramControl inherits DebugProgramControl {
     public {
         # listener for debug events returned from debugger
         *DebugEventListener listener;
@@ -103,10 +107,9 @@ class LocalDebugProgramControl inherits DebugProgramControl {
         if (listener)
             listener.handleDebugEvent(data);
     }
-}
+}*/
 
-public class DbgLogger inherits DebugLogger {
-    constructor() {}
+public class DbgLogger {
     public log(int verbosity, string fmt) {
         FileOutputStream fos("/home/omusil/qda.debug.log", True);
         string logmsg = vprintf(fmt+"\n", argv);
@@ -118,61 +121,156 @@ public class DbgLogger inherits DebugLogger {
 #! Debug connection
 public class LocalDebugConnection inherits AbstractDebugConnection {
     public {
+        const WSC_TIMEOUT = 1500ms;
+
+        # logger
+        DbgLogger logger();
+
         # connection context
         hash cx = {'id': 1};
-
-        # data
-        auto threadData;
 
         # sync counter
         Counter counter();
 
+        # qdbg-server process
+        *Process server;
+
+        # qdbg-server port
+        int serverPort = 41234;
+
+        string serverName;
+        string serverUrl;
+
+        int pendingUid;
+        auto recData;
+        *WebSocketClient wsc;
+        timeout wscTimeout;
+		bool connecting;
+
         # session info
         hash<DebugSession> session();
 
-        int pgmIdCounter = 0;
-        int threadIdCounter = 0;
+        #int pgmIdCounter = 0;
+        #int threadIdCounter = 0;
         int bpIdCounter = 0;
     }
 
     private {
         # connection/server name for DebugProgramControl
         string connectionName;
-
-        # debugged program
-        *DebugProgramControl dpc;
     }
 
     public constructor(DebugEventListener l, hash<DebugParams> debugParams) : AbstractDebugConnection(l, debugParams) {
-        connect();
+        wscTimeout = WSC_TIMEOUT;
+        # TODO check options for timeout
+
+        hash opts;
+        opts.log = \wscLog();
+        opts.errlog = \wscErr();
+        opts.debuglog = \wscDebug();
+        opts.url = "ws://127.0.0.1:" + string(serverPort);
+        serverUrl = opts.url;
+        wsc = new WebSocketClient(\wscEvent(), opts);
+        #connect();
     }
 
     public destructor() {
         disconnect();
-        # TODO
+        delete wsc;
+        terminateServer();
     }
 
-    public *hash doCommand(hash data) {
-        if (exists data.tid) {
-            while (counter.getCount() > 0) {
-                counter.dec();
+    public wscEvent(*data msg) {
+        logger.log(2, "received: %y", msg);
+        if (!exists msg)
+            return;
+        listener.handleDebugEvent(msg);
+        try {
+            auto d = parse_yaml(msg);
+            if (counter.getCount() > 0) {
+                if ((d.type == "response" && pendingUid == d.uid && !connecting) ||
+                    (d.type == "event" && d.cmd == "welcome" && connecting) ) {
+                    recData = d;
+                    counter.dec();
+                    connecting = False;
+                    return;
+                }
             }
-            counter.inc();
-            threadData = NOTHING;
+            #printData(d);
+        } catch (hash<ExceptionInfo> ex) {
+            wscErr(sprintf("wscEvent: %y", ex));
         }
+    }
 
-        DbgLogger logger = dpc.logger;
-        logger.log(0, "before dpc.processCommand\n");
-        *hash ret = dpc.processCommand(cx, data);
-        logger.log(0, "after dpc.processCommand\n");
-        if (ret.type == 'thread') {
-            if (counter.waitForZero(200)) {
-                return NOTHING;
-            } else {
-                return threadData;
+    public wscLog(string fmt) {
+        logger.log(1, fmt, argv);
+    }
+
+    public wscDebug(string fmt) {
+        logger.log(2, fmt, argv);
+    }
+
+    public wscErr(string fmt) {
+        stderr.printf(fmt+"\n", argv);
+    }
+
+    private startServer() {
+        list args = ("-l", "127.0.0.1:" + string(serverPort), params.programPath);
+        server = new Process("qdbg-server", args);
+    }
+
+    private terminateServer() {
+        try {
+            if (server) {
+                server.terminate();
+                delete server;
             }
+        }
+        catch (ex) {}
+    }
+
+    private connect() {
+        connecting = True;
+        counter.inc();
+		hash hh = wsc.connect();
+        *string prot_ver = hh{QoreDebugWsProtocolHeader.lwr()};
+        if (!prot_ver.val())
+            throw "QORE-DEBUG", sprintf("Connected to %y, but no %y header received in response; check the URI path and try again", serverUrl, QoreDebugWsProtocolHeader);
+        if (prot_ver != QoreDebugProtocolVersion)
+            throw "QORE-DEBUG", sprintf("Qore debug server at %y claims unsupported protocol version %y; expecting %y", serverUrl, prot_ver, QoreDebugProtocolVersion);
+        if (counter.waitForZero(wscTimeout)) {
+            throw "QORE-DEBUG", "No response from debug server";
         } else {
-            return ret;
+            serverName = recData.result;
+        }
+    }
+
+    private *hash doCommand(hash data) {
+        #if (!wsc.isOpen()) throw
+
+        # prepare data for sending
+        pendingUid = clock_getmicros();
+        data.uid = pendingUid;
+        string d = make_yaml(data);
+
+        # prepare the counter
+        while (counter.getCount() > 0) {
+            counter.dec();
+        }
+        counter.inc();
+
+        # null the data
+        recData = NOTHING;
+
+        # log
+        logger.log(0, "send: %y", d);
+
+        # send and receive
+        wsc.send(d);
+        if (counter.waitForZero(wscTimeout)) {
+            return NOTHING;
+        } else {
+            return recData;
         }
     }
 
@@ -182,17 +280,10 @@ public class LocalDebugConnection inherits AbstractDebugConnection {
         connectionName = "vscode_" + string(id);
     }
 
-    private connect() {
-        generateConnectionDetails();
-        dpc = new LocalDebugProgramControl(connectionName, listener, self);
-        dpc.logger = new DbgLogger();
-        # TODO
-    }
-
     public *hash launch() {
-        Program pgm = dpc.createProgram(params.programPath, NOTHING, list(), NOTHING);
-        #logger.log(DUV_INFO, "run program");
-        background pgm.run();
+        startServer();
+        sleep(1s);
+        connect();
 
         if (params.stopOnEntry) {
             # return "stopped on entry" event
@@ -208,47 +299,22 @@ public class LocalDebugConnection inherits AbstractDebugConnection {
     }
 
     public disconnect(bool terminate = True) {
-        # TODO
-        DbgLogger logger = dpc.logger;
-        logger.log(0, "ldc::disconnect\n");
-        dpc.shutdown();
-        logger.log(0, "ldc::disconnect after shutdown\n");
-        delete dpc;
-        logger.log(0, "ldc::disconnect after delete\n");
+        logger.log(0, "disconnecting websocket client");
+        if (wsc)
+            wsc.disconnect();
+        logger.log(0, "disconnected");
     }
 
     # CONTROL REQUESTS
 
     public continue_(int threadId) {
         # TODO
-        DbgLogger logger();
         logger.log(0, "continue command: %d", threadId);
 
         hash data.cmd = 'thread/go';
         data.tid = threadId;
         doCommand(data);
         logger.log(0, "after continue command");
-
-        /*
-        'go': (
-            '*': (
-                'enum': list sub(DebugCommandLine dcl, softlist path, softlist args) {
-                    return DebugCommandLine::enumFilter(keys runStateStrings, pop path);
-                },
-                'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
-                    hash data.cmd = 'thread/go/'+pop path;
-                    data.tid = dcl.checkThreadId();
-                    dcl.doCommand(data);
-                },
-            ),
-            'desc': sprintf('go thread with specified runstate, arg: %s', (keys AbstractDebugControl::runStateStrings).join('|')),
-            'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
-                hash data.cmd = 'thread/go';
-                data.tid = dcl.checkThreadId();
-                dcl.doCommand(data);
-            },
-        ),
-        */
     }
 
     public next(int threadId) {
@@ -275,6 +341,40 @@ public class LocalDebugConnection inherits AbstractDebugConnection {
 
     public hash stackTrace(int threadId, *int startFrame, *int levels, *hash format) {
         # TODO
+        hash data.cmd = 'thread/stack';
+        data.tid = threadId;
+        *hash th = doCommand(data);
+
+        if (th) {
+            #stdout.printf("TID %d call stack:\r\n", th.tid);
+            foreach hash lh in (th.result) {
+                string str = sprintf(" - %d%s: ", $#, lh.current ? "*":" ");
+                if (lh.function.val())
+                    str += sprintf("%s()", lh.function);
+                else
+                    str += "<unknown function>";
+                str += " (";
+                string loc;
+                if (lh.source)
+                    loc += sprintf("%s:%d", lh.source, lh.line + lh.offset);
+                else {
+                    loc += sprintf("%s", lh.file ?? "<unknown>");
+                    if (lh.line > 0)
+                        loc += sprintf(":%d", lh.line);
+                }
+                if (lh.endline > 0)
+                    loc += sprintf("-%d", lh.endline + lh.offset);
+                if (loc)
+                    str += loc + " ";
+                str += lh.type;
+                str += ")";
+                #stdout.print(str + "\r\n");
+            }
+        }
+        else {
+            throw "NO-RESPONSE", "server returned no response";
+        }
+
         /*
         'bt': (
             'desc': 'get stack for current thread',
@@ -400,13 +500,13 @@ public class LocalDebugConnection inherits AbstractDebugConnection {
         return {};
     }
 
-    int getFreePgmId() {
+    /*int getFreePgmId() {
         return pgmIdCounter++;
     }
 
     int getFreeThreadId() {
         return threadIdCounter++;
-    }
+    }*/
 
     int getFreeBpId() {
         return bpIdCounter++;
@@ -426,12 +526,10 @@ public class LocalDebugConnection inherits AbstractDebugConnection {
 
     private updateSession() {
         hash data.cmd = 'session/get';
-        DbgLogger logger();
         *hash sh = doCommand(data).result;
         logger.log(0, "got session: %N", sh);
         if (sh) {
             foreach hash ph in (sh.pairIterator()) {
-
                 #*string pgmId = findProgramIdByKey(ph.key);
                 string pgmId = ph.key;
                 #if (pgmId) {

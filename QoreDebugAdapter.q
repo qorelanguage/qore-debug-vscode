@@ -95,6 +95,7 @@ class QoreDebugAdapter inherits DebugEventListener {
 
     public destructor() {
         quitDebugger();
+        log(0, "exiting gracefully");
     }
 
     private:internal string getDefaultLogFilePath() {
@@ -151,7 +152,7 @@ class QoreDebugAdapter inherits DebugEventListener {
     }
 
     private:internal error(string fmt) {
-        log(0, fmt, argv);
+        log(0, "ERROR: " + fmt, argv);
         stderr.vprintf("ERROR: " + fmt + "\n", argv);
         exit(1);
     }
@@ -307,6 +308,7 @@ class QoreDebugAdapter inherits DebugEventListener {
 
     public handleDebugEvent(auto event) {
         # TODO
+        log(2, "dbg evt: %N", event);
     }
 
 
@@ -345,22 +347,26 @@ class QoreDebugAdapter inherits DebugEventListener {
 
         # create debug connection
         *hash result = startDebugger(params);
-        if (result)
-            return Response::error(request, result, "error starting debugger");
+        if (result) {
+            stderr.printf("Error starting debugger:\n%N\n", result);
+            return Response::error(request, result, "Error starting debugger");
+        }
 
         # try launching
         try {
             result = debugger.launch();
         }
         catch (hash<ExceptionInfo> ex) {
-            return Response::error(request, ex, "error during program launch");
+            stderr.printf("Error during program launch:\n%N\n", ex);
+            return Response::error(request, ex, "Error during program launch");
         }
 
         # return result if possible
         if (result) {
             if (result.reason == "entry")
                 return (Response::ok(request), Event::make("stopped", result));
-            return Response::error(request, result, "error during program launch - unknown result value");
+            stderr.printf("Error during program launch - unknown result value:\n%N\n", result);
+            return Response::error(request, result, "Error during program launch - unknown result value");
         }
 
         return Response::ok(request);
