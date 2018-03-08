@@ -63,7 +63,8 @@
             {
                 "type": "qore",
                 "label": "Qore Debug",
-                "program": "./QoreDebugAdapter.q",
+                "program": "./qvscdbg",
+                "args": ["-vvv"],
                 "runtime": "qore",
                 "variables": {
                     "AskForProgramName": "extension.qore-debug-vscode.getProgramName"
