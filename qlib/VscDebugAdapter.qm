@@ -45,9 +45,8 @@ module VscDebugAdapter {
 /*
     Known issues:
         - we cannot catch in onExit() return value of Program::run()
-        - local params from second thread are empty get_local_vars() C++
         - function must be specified with parameteres even no user variants
-        - Qore does not provide value for top-level local variables, i.e. thread vars
+        - Qore does not provide value for top-level local variables separately as thread vars
 
     TODO:
         - breakpoint server side hitcount (atomic counters C11)
@@ -58,7 +57,6 @@ module VscDebugAdapter {
         - qvscdbg-remote
         - structured variables (at least classes/objects)
         - run in terminal mode and pipe stdout and stdin ???
-        - test closures
 
     VSCode issues:
         - evaluate "watch" request is not executed every step so watch value might be out of date
@@ -157,7 +155,7 @@ public namespace VscDebugAdapter {
         VSC launches adapter executable and communicates over stdin and stdout. The class implements
         common functionality and provides abstract interface to connect debug server
     */
-    public class VscDebugAdapter inherits DebugCommandLine /*AbstractDebugControl*/ {
+    public class VscDebugAdapter inherits DebugCommandLine {
         private:internal {
             const START_LAUNCH = 1;
             const START_ATTACH = 2;
@@ -225,8 +223,6 @@ public namespace VscDebugAdapter {
                         if (!exists c) {
                             break;
                         }
-                        #buff += stdin.readBinary(1);
-#logger.log(DUV_DEBUG_1, "%y  %y", c, buff.toString());
                         if (payload) {
                             buff += c;
                             if (buff.size() >= len) {
@@ -267,18 +263,15 @@ public namespace VscDebugAdapter {
                                 }
                             }
                         } else if (c == <0A>) {
-            #logger.log(DUV_DEBUG_1, "PART_DELIMITER detected %y", buff);
                             if (buff.size() == 0) {
                                 #if (len < 0 ) {
                                     #throw "VDA-ERROR", "Missing content length";
                                 #}
                                 payload = len > 0;
-            #logger.log(DUV_DEBUG_1, "Paylod: %y", payload);
                             } else {
                                 string s = buff.toString("UTF-8");
                                 # read headers
                                 *list l = s =~ x/^([A-Za-z\-]+):(.+)$/;
-            #logger.log(DUV_DEBUG_1, "list: s: %y -> %y", s, l);
                                 if (l[0] == "Content-Length") {
                                     trim l[1];
                                     len = int(l[1]);
@@ -287,9 +280,7 @@ public namespace VscDebugAdapter {
                             }
                             remove buff;
                         } else if (c != <0D>) {
-                    #logger.log(DUV_DEBUG_1, "Add buff 1: %y", buff);
                             buff += c;
-                    #logger.log(DUV_DEBUG_1, "Add buff 2: %y", buff);
                         }
                     }
                     while (m_queue.size() > 0) {
@@ -345,7 +336,6 @@ public namespace VscDebugAdapter {
                     detach(event);
                 } else {
                     if (!m_programState{event.pgmid}.vcsNotified) {
-logger.log(DUV_DEBUG_1, "pgms: %N", m_programState);
                         hash e;
                         e.name = m_programState{event.pgmid}.info.scriptName;
                         e.isLocalProcess = True;
@@ -517,7 +507,7 @@ logger.log(DUV_DEBUG_1, "pgms: %N", m_programState);
             }
         }
 
-        private:internal auto getVariable(int threadId, string name) {
+        private:internal auto getVariable(int threadId, int frameId, string name) {
             auto val;
             if (threadId == 0) {
                 val = doCommand((
@@ -528,6 +518,7 @@ logger.log(DUV_DEBUG_1, "pgms: %N", m_programState);
                     val = doCommand((
                         "cmd": "thread/debug/"+name[DEBUGVAR_PREFIX.size()..]+"/get",
                         "tid": threadId,
+                        "frameid": frameId,
                     )).result;
                     if (exists val.value) {
                         val = val.value;  # for $result
@@ -536,6 +527,7 @@ logger.log(DUV_DEBUG_1, "pgms: %N", m_programState);
                     val = doCommand((
                         "cmd": "thread/local/"+name+"/get",
                         "tid": threadId,
+                        "frameid": frameId,
                     )).result.value;
                 }
             }
@@ -610,35 +602,70 @@ logger.log(DUV_DEBUG_1, "pgms: %N", m_programState);
         private hash<auto> getCommands() {
             hash cmds = DebugCommandLine::getCommands();
             cmds.'>' += (
-                'logger': (
-                    '>': {
-                        'set': (
-                            'desc': 'set logger level, args: level',
-                            '*': (
-                                'validate': \DebugCommandLine::validateInt(),
-                                'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
-                                    dcl.logger.verbose = int(pop path);
-                                },
-                            ),
-                        ),
-                        'get': (
-                            'desc': 'get current logger level',
-                            'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
-                                printfImpl("Logging level: %d\n", dcl.logger.verbose);
+                'options': (
+                    '>': (
+                        'verbose': (
+                            '>': {
+                                'set': (
+                                    'desc': 'set logger verbosity level, args: level',
+                                    '*': (
+                                        'validate': \DebugCommandLine::validateInt(),
+                                        'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
+                                            dcl.logger.verbose = int(pop path);
+                                        },
+                                    ),
+                                ),
+                                'get': (
+                                    'desc': 'get current logger verbosity level',
+                                    'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
+                                        printfImpl("Logging level: %d\n", dcl.logger.verbose);
+                                    },
+                                ),
                             },
+                            'fallback': sub(DebugCommandLine dcl, softlist path, reference args) {
+                                switch (args[0] ?? '') {
+                                case '':
+                                    unshift args, 'get';
+                                    break;
+                                case /^[0-9]+$/:
+                                    unshift args, 'set';
+                                    break;
+                                }
+                            },
+                            'desc': 'logger verbosity commands',
                         ),
-                    },
-                    'fallback': sub(DebugCommandLine dcl, softlist path, reference args) {
-                        switch (args[0] ?? '') {
-                        case '':
-                            unshift args, 'get';
-                            break;
-                        case /^[0-9]+$/:
-                            unshift args, 'set';
-                            break;
-                        }
-                    },
-                    'desc': 'logger related commands',
+                        'fullexceptioninfo': (
+                            '>': {
+                                'set': (
+                                    'desc': 'set full exception info, args: 0|1',
+                                    '*': (
+                                        'validate': \DebugCommandLine::validateInt(),
+                                        'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
+                                            showFullException = int(pop path) > 0;
+                                        },
+                                    ),
+                                ),
+                                'get': (
+                                    'desc': 'get full exception info',
+                                    'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
+                                        printfImpl("Full exception info: %d\n", showFullException);
+                                    },
+                                ),
+                            },
+                            'fallback': sub(DebugCommandLine dcl, softlist path, reference args) {
+                                switch (args[0] ?? '') {
+                                case '':
+                                    unshift args, 'get';
+                                    break;
+                                case /^[0-9]+$/:
+                                    unshift args, 'set';
+                                    break;
+                                }
+                            },
+                            'desc': 'full exception info commands',
+                        ),
+                    ),
+                    'desc': 'options related commands',
                 ),
             );
             return cmds;
@@ -652,11 +679,10 @@ logger.log(DUV_DEBUG_1, "pgms: %N", m_programState);
         }
 
         public nothing vsc_launch(hash args) {
-/*            args.program
+/*          args.program
             args.stopOnEntry
             args.args
             send
-
 */
             hash p = doCommand((
                 "cmd": "program//create",
@@ -781,7 +807,6 @@ logger.log(DUV_DEBUG_1, "pgms: %N", m_programState);
         public hash vsc_scopes(hash args) {
             int threadId = args.frameId >> 16;
             int frameId = args.frameId & 0xFFFF;
-            setThreadFrame(threadId, frameId);
             hash res.scopes = ();
             *list l = m_programState{m_currentPgmId}.thread{threadId}.locals{frameId};
             if (!exists l) {
@@ -789,6 +814,7 @@ logger.log(DUV_DEBUG_1, "pgms: %N", m_programState);
                     l = doCommand((
                         "cmd": "thread/local//list",
                         "tid": threadId,
+                        "frameid": frameId,
                     )).result;
                     if (frameId == 0 && exists m_programState{m_currentPgmId}.thread{threadId}.debugVar) {
                         push l, DEBUGVAR_PREFIX+m_programState{m_currentPgmId}.thread{threadId}.debugVar;
@@ -832,9 +858,6 @@ logger.log(DUV_DEBUG_1, "pgms: %N", m_programState);
             hash res.variables = ();
             int threadId = args.variablesReference >> 16;
             int frameId = args.variablesReference & 0xFFFF;
-            if (threadId != 0) {
-                setThreadFrame(threadId, frameId);
-            }
             if (args.filter != "indexed") {
                 *list l;
                 if (threadId == 0) {
@@ -849,7 +872,7 @@ logger.log(DUV_DEBUG_1, "pgms: %N", m_programState);
                 for (int i = args.start ?? 0; i < l.size() && n > 0; i++, n--) {
                     hash v;
                     v.name = l[i];
-                    auto val = getVariable(threadId, l[i]);
+                    auto val = getVariable(threadId, frameId, l[i]);
                     v.value = printValue(val, args.format);
                     v.type = val.type();
                     # properties, private etc.
@@ -872,10 +895,10 @@ logger.log(DUV_DEBUG_1, "pgms: %N", m_programState);
                         "value": val,
                     ));
                 } else {
-                    setThreadFrame(threadId, frameId);
                     doCommand((
                         "cmd": "thread/local/"+args.name+"/set",
                         "tid": threadId,
+                        "frameid": frameId,
                         "value": val,
                     ));
                 }
@@ -885,7 +908,7 @@ logger.log(DUV_DEBUG_1, "pgms: %N", m_programState);
                     "value": val,
                 ));
             }
-            val = getVariable(threadId, args.name);
+            val = getVariable(threadId, frameId, args.name);
             hash res.value = printValue(val, args.format);
             res.type = val.type();
             return res;
@@ -920,10 +943,7 @@ logger.log(DUV_DEBUG_1, "pgms: %N", m_programState);
                     }
                 }
                 if (inlist(args.expression, l)) {
-                    if (threadId != 0) {
-                        setThreadFrame(threadId, frameId);
-                    }
-                    auto val = getVariable(threadId, args.expression);
+                    auto val = getVariable(threadId, frameId, args.expression);
                     res.result = printValue(val, args.format);
                     res.type = val.type();
                     # properties, private etc.

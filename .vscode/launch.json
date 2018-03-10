@@ -27,6 +27,36 @@
         {
             "type": "qore",
             "request": "launch",
+            "name": "Launch test-basic.q",
+            "program": "${workspaceFolder}/test/test-basic.q"
+        },
+        {
+            "type": "qore",
+            "request": "launch",
+            "name": "Launch test-exception.q",
+            "program": "${workspaceFolder}/test/test-exception.q"
+        },
+        {
+            "type": "qore",
+            "request": "launch",
+            "name": "Launch test-class.q",
+            "program": "${workspaceFolder}/test/test-class.q"
+        },
+        {
+            "type": "qore",
+            "request": "launch",
+            "name": "Launch test-closure.q",
+            "program": "${workspaceFolder}/test/test-closure.q"
+        },
+        {
+            "type": "qore",
+            "request": "launch",
+            "name": "Launch test-pause.q",
+            "program": "${workspaceFolder}/test/test-pause.q"
+        },
+        {
+            "type": "qore",
+            "request": "launch",
             "name": "Ask for file name",
             "program": "${workspaceFolder}/${command:AskForProgramName}",
             "stopOnEntry": true

@@ -6,9 +6,8 @@
 
 %requires qore >= 0.8.13
 %requires qlib/VscDebugAdapter.qm
-#%requires DebugProgramControl 
+#%requires DebugProgramControl >= 0.1.2
 %requires ../qore/qlib/DebugProgramControl.qm
-# TODO: >= 0.1.2
 %allow-debugger
 %no-debugging
 
@@ -79,6 +78,7 @@ class DebugWrapper {
         hash opts = (
             'help': 'h,help',
             'verbose': 'v,verbose:+',
+            'full_exception': 'f,full-exception',
             'run': 'r,run',
             "parse_option": "p,set-parse-option=s@",
             #"charset": "c,charset=s",
@@ -120,6 +120,7 @@ class DebugWrapper {
         }
         DebugProgramControlLocal dpcl();
         vda = new VscDebugAdapterLocal(dpcl, opt);
+        vda.showFullException = exists opt.full_exception;
         vda.logger = logger;
         vda.dpc.logger = logger;
         logger.debugAdapter = vda;
@@ -140,6 +141,7 @@ class DebugWrapper {
         printf("usage: %s [options]\n"
             "  -v     verbose\n"
             "  -h     help\n"
+            "  -f, --full-exception         show full exception info\n"
             #"  -c, --charset=arg            sets default character set encoding\n"
             "  -D, --define=arg             sets the value of a parse define\n"
             "  -p, --set-parse-option=arg   set parse option (ex: -pno-database)\n"
