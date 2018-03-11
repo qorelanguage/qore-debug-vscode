@@ -386,15 +386,21 @@ public namespace VscDebugAdapter {
                     hash e;
                     e.reason = event.func;
                     e.description = sprintf("Stopped on %s event", event.func);
-                    if (exists event.statementid) {
+                    if (exists event.bkptid) {
+                        bool fl = False;
                         foreach string s in (keys m_programState{event.pgmid}.sourceBreakpoints) {
-                            if (isBreakpointEvent(m_programState{event.pgmid}.sourceBreakpoints{s}, event.statementid)) {
-                                e.description += "+bkpt";
+                            if (m_programState{event.pgmid}.sourceBreakpoints{s}{event.bkptid}) {
+                                e.description += "+src";
+                                fl = True;
                                 break;
                             }
                         }
-                        if (isBreakpointEvent(m_programState{event.pgmid}.functionBreakpoints, event.statementid)) {
-                            e.description += "+func";
+                        if (!fl) {
+                            if (m_programState{event.pgmid}.functionBreakpoints{event.bkptid}) {
+                                e.description += "+func";
+                            } else {
+                                e.description += "+bkpt";
+                            }
                         }
                     }
                     e.threadId = event.tid;
@@ -566,15 +572,6 @@ public namespace VscDebugAdapter {
                 push res, b;
             }
             return res;
-        }
-
-        private:internal bool isBreakpointEvent(*hash bkpts, int statementId) {
-            foreach string k in (keys bkpts) {
-                if (bkpts{k}.statementId == statementId) {
-                    return True;
-                }
-            }
-            return False;
         }
 
         private:internal string printValue(auto value, *hash format) {
