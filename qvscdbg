@@ -58,7 +58,7 @@ class DebugProgramControlLocal inherits DebugProgramControl {
     destructor() {
         unregisterConnection(CX);
     }
-    public sendDataImpl(hash cx, auto data) {    # TODO: nothing needed. why? I cannot reproduce in simple case to report issue
+    public sendDataImpl(hash cx, auto data) {
         logger.log(DUV_DEBUG, "sendDataImpl: %y: %y", cx, data);
         if (vda.counter.getCount() > 0) {
             vda.threadData = data;

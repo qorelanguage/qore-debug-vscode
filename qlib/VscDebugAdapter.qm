@@ -598,73 +598,7 @@ public namespace VscDebugAdapter {
 
         private hash<auto> getCommands() {
             hash cmds = DebugCommandLine::getCommands();
-            cmds.'>' += (
-                'options': (
-                    '>': (
-                        'verbose': (
-                            '>': {
-                                'set': (
-                                    'desc': 'set logger verbosity level, args: level',
-                                    '*': (
-                                        'validate': \DebugCommandLine::validateInt(),
-                                        'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
-                                            dcl.logger.verbose = int(pop path);
-                                        },
-                                    ),
-                                ),
-                                'get': (
-                                    'desc': 'get current logger verbosity level',
-                                    'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
-                                        printfImpl("Logging level: %d\n", dcl.logger.verbose);
-                                    },
-                                ),
-                            },
-                            'fallback': sub(DebugCommandLine dcl, softlist path, reference args) {
-                                switch (args[0] ?? '') {
-                                case '':
-                                    unshift args, 'get';
-                                    break;
-                                case /^[0-9]+$/:
-                                    unshift args, 'set';
-                                    break;
-                                }
-                            },
-                            'desc': 'logger verbosity commands',
-                        ),
-                        'fullexceptioninfo': (
-                            '>': {
-                                'set': (
-                                    'desc': 'set full exception info, args: 0|1',
-                                    '*': (
-                                        'validate': \DebugCommandLine::validateInt(),
-                                        'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
-                                            showFullException = int(pop path) > 0;
-                                        },
-                                    ),
-                                ),
-                                'get': (
-                                    'desc': 'get full exception info',
-                                    'action': sub(DebugCommandLine dcl, softlist path, softlist args) {
-                                        printfImpl("Full exception info: %d\n", showFullException);
-                                    },
-                                ),
-                            },
-                            'fallback': sub(DebugCommandLine dcl, softlist path, reference args) {
-                                switch (args[0] ?? '') {
-                                case '':
-                                    unshift args, 'get';
-                                    break;
-                                case /^[0-9]+$/:
-                                    unshift args, 'set';
-                                    break;
-                                }
-                            },
-                            'desc': 'full exception info commands',
-                        ),
-                    ),
-                    'desc': 'options related commands',
-                ),
-            );
+            # any extra commands ?
             return cmds;
         }
         #! methods implementing commands, "public" is needed bacause of hasCallableMethod()
