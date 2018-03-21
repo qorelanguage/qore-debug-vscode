@@ -338,13 +338,16 @@ public namespace VscDebugAdapter {
                     if (!m_programState{event.pgmid}.vcsNotified) {
                         hash e;
                         e.name = m_programState{event.pgmid}.info.scriptName;
-                        e.isLocalProcess = True;
                         switch (m_programState{event.pgmid}.startMethod) {
                         case START_LAUNCH:
                             e.startMethod = "launch";
+                            e.isLocalProcess = True;
                             break;
                         case START_ATTACH:
                             e.startMethod = "attach";
+                            e.isLocalProcess = False;
+                            # we are ready receive breakpoints
+                            sendVscEvent("initialized");
                             break;
                         case START_ATTACH_SUSPENDED:
                         }
@@ -630,6 +633,52 @@ public namespace VscDebugAdapter {
             );
             # we are ready receive breakpoints
             sendVscEvent("initialized");
+        }
+
+        public nothing vsc_attach(hash args) {
+            string pgmId;
+            if (args.program =~ /^[0-9]+$/) {
+                pgmId = args.program;
+            } else {
+                foreach string pgmId2 in (keys m_programState) {
+                    if (m_programState{pgmId2}.info.scriptName == args.program) {
+                        pgmId = pgmId2;
+                        break;
+                    }
+                }
+                if (!exists pgmId) {
+                    throw "VDA-ERROR", sprintf("Cannot resolve program %y", args.program);
+                }
+            }
+            hash p = doCommand((
+                "cmd": "program/"+pgmId+"/add",
+            ));
+            m_currentPgmId = int(pgmId);
+            m_programState{pgmId} += (
+                "startMethod": START_ATTACH,
+            );
+            if (p) {
+                # TODO get threads ???
+            }
+            if (m_programState{pgmId}.info.debugged) {
+                if (m_programState{pgmId}.info.interrupted) {
+                    # we are ready receive breakpoints
+                    sendVscEvent("initialized");
+
+                    # TODO: when a thread is running ?
+                    hash e;
+                    e.name = m_programState{pgmId}.info.scriptName;
+                    e.isLocalProcess = False;
+                    e.startMethod = "attach";
+                    sendVscEvent("process", e);
+                    m_programState{pgmId}.vcsNotified = True;
+                    # m_programState{pgmId}.mainThreadId = m_programState{pgmId}.threads[0];   # TODO: what is main threads ?
+                    foreach int tid in (m_programState{pgmId}.info.interrupted) {
+                        sendVscEvent("thread", ("threadId": tid, "reason": "started")); # TODO: started ?
+                        m_programState{pgmId}.vcsThreadNotified{tid} = True;
+                    }
+                }
+            }
         }
 
         public nothing vsc_configurationDone() {

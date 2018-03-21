@@ -4,7 +4,6 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-
         {
             "type": "extensionHost",
             "request": "launch",
@@ -53,6 +52,13 @@
             "request": "launch",
             "name": "Launch test-pause.q",
             "program": "${workspaceFolder}/test/test-pause.q"
+        },
+        {
+            "type": "qore",
+            "request": "attach",
+            "name": "Attach test-debug_job:1.0@localhost:8001",
+            "connection": "ws://localhost:8001/debug",
+            "program": "test-debug_job:1.0"
         },
         {
             "type": "qore",
