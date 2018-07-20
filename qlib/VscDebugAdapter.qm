@@ -131,19 +131,19 @@ public namespace VscDebugAdapter {
         /**
           @param verbosity use DPC_xxx constants
         */
-        public log(int verbosity, string fmt) {
+        public log2(int verbosity, string fmt, *list args) {
             if (m_logging && verbose >= verbosity) {
                 if (m_filename) {
                     try {
-                        m_file.write(binary(vsprintf(fmt+"\r\n", argv)));
+                        m_file.write(binary(vsprintf(fmt+"\r\n", args)));
                     } catch (hash<ExceptionInfo> ex) {
                         stderr.vprintf("Ex: %y\r\n", ex);
                     }
                 } else {
-                    stderr.vprintf(fmt+"\r\n", argv);
+                    stderr.vprintf(fmt+"\r\n", args);
                 }
                 if (debugAdapter) {
-                    debugAdapter.printfImpl("%s", vsprintf(fmt+"\n", argv));
+                    debugAdapter.printfImpl("%s", vsprintf(fmt+"\n", args));
                 }
             }
         }
@@ -197,7 +197,7 @@ public namespace VscDebugAdapter {
         #! push event from debug server in queue
         public nothing pushEvent(any event) {
             if (event.type != "vsc_output") {
-                logger.log(DUV_DEBUG, "Event: %y", event);
+                log(DUV_DEBUG, "Event: %y", event);
             }
             m_queue.push(event);
         }
@@ -216,7 +216,7 @@ public namespace VscDebugAdapter {
                 int len = -1;
                 binary buff;
                 bool payload = False;
-                logger.log(DUV_INFO, "Run: %y", now());
+                log(DUV_INFO, "Run: %y", now());
                 while (m_running) {
                     while (stdin.isDataAvailable()) {
                         *binary c = stdin.readBinary(1);
@@ -227,7 +227,7 @@ public namespace VscDebugAdapter {
                             buff += c;
                             if (buff.size() >= len) {
                                 string s = buff.size() > 0 ? buff.substr(0, len).toString("UTF-8"): "";
-                                logger.log(DUV_DEBUG_1, "%s", s);
+                                log(DUV_DEBUG_1, "%s", s);
                                 payload = False;
                                 splice buff, 0, len;
                                 len = -1;
@@ -253,7 +253,7 @@ public namespace VscDebugAdapter {
                                     default:
                                         resp.success = False;
                                         resp.message = ex.err + ": " + ex.desc;
-                                        logger.log(DUV_DEBUG, "%s", get_exception_string(ex));
+                                        log(DUV_DEBUG, "%s", get_exception_string(ex));
                                     }
                                 }
                                 if (resp) {
@@ -275,7 +275,7 @@ public namespace VscDebugAdapter {
                                 if (l[0] == "Content-Length") {
                                     trim l[1];
                                     len = int(l[1]);
-                                    logger.log(DUV_DEBUG_1, "Content-Length: %d", len);
+                                    log(DUV_DEBUG_1, "Content-Length: %d", len);
                                 }
                             }
                             remove buff;
@@ -297,13 +297,13 @@ public namespace VscDebugAdapter {
                                 sendVscEvent("output", h);
                             }
                         } catch (hash<ExceptionInfo> ex) {
-                            logger.log(DUV_INFO, "ex: %y", ex);
+                            log(DUV_INFO, "ex: %y", ex);
                         }
                     }
                 }
                 sendVscEvent("terminated");
             } catch (hash<ExceptionInfo> ex) {
-                logger.log(DUV_INFO, "ex: %y", ex);
+                log(DUV_INFO, "ex: %y", ex);
                 rethrow;
             }
         }
@@ -321,10 +321,12 @@ public namespace VscDebugAdapter {
 
         #! process event from debugger
         private:internal processDebugEvent(hash event) {
-            if (!exists m_programState{event.pgmid}.info) {
-                updateProgramCache(doCommand(("cmd": "program/="+event.pgmid+"/list")));
+            if (exists event.pgmid) {
+                if (!exists m_programState{event.pgmid}.info) {
+                    updateProgramCache(doCommand(("cmd": "program/="+event.pgmid+"/list")));
+                }
             }
-            logger.log(DUV_DEBUG_1, "processDebugEvent: %y", event);
+            log(DUV_DEBUG_1, "processDebugEvent: %y", event);
             switch (event.cmd) {
             case "interrupt":
                 /*if (event.pgmid != m_currentPgmId) {
@@ -442,6 +444,9 @@ public namespace VscDebugAdapter {
                     sendVscEvent("continued", ("threadId": event.tid, "allThreadsContinued": False));
                 }
                 break;
+            case "welcome":
+                log(DUV_INFO, "Connected: %y", event.result);
+                break;
             }
         }
 
@@ -458,7 +463,7 @@ public namespace VscDebugAdapter {
         #! parse request from VSC frontend
         private:internal hash parseVscRequest(string msg) {
             any req = parse_json(msg);
-            logger.log(DUV_DEBUG, "receiveVsc: %y", req);
+            log(DUV_DEBUG, "receiveVsc: %y", req);
             if (req.typeCode() != NT_HASH) {
                 throw "VDA-ERROR", "Invalid message datatype";
             }
@@ -471,7 +476,7 @@ public namespace VscDebugAdapter {
         #! send message for VSC frontend
         private:internal sendVscMessage(hash msg) {
             if (msg.event != "output") {
-                logger.log(DUV_DEBUG, "sendVsc: %y", msg);
+                log(DUV_DEBUG, "sendVsc: %y", msg);
             }
             string resp = make_json(msg);
             binary b = binary(resp);
@@ -685,7 +690,7 @@ public namespace VscDebugAdapter {
         }
 
         public hash vsc_threads() {
-        #logger.log(DUV_DEBUG_1, "pgmid: %y, state: %y", m_currentPgmId, m_programState);
+        #log(DUV_DEBUG_1, "pgmid: %y, state: %y", m_currentPgmId, m_programState);
             hash res.threads = ();
             if (m_currentPgmId) {
                 updateProgramCache(doCommand(("cmd": "program/="+m_currentPgmId+"/list")));

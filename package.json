@@ -71,7 +71,7 @@
                 ],
                 "runtime": "qore",
                 "languages": [
-                    "oore"
+                    "qore"
                 ],
                 "variables": {
                     "AskForFilename": "extension.qore-debug-vscode.getFilename",
@@ -169,7 +169,7 @@
                             },
                             "program": {
                                 "type": "string",
-                                "description": "AProgram name or id",
+                                "description": "Program name or id",
                                 "default": "${command:AskForProgram}"
                             },
                             "logFilename": {

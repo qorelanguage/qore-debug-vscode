@@ -5,6 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "type": "mock",
+            "request": "launch",
+            "name": "Mock debug",
+            "program": "${workspaceFolder}/package.json",
+            "stopOnEntry": true
+        },
+        {
             "type": "extensionHost",
             "request": "launch",
             "name": "Launch Extension",
@@ -15,12 +22,15 @@
             "outFiles": [
                 "${workspaceFolder}/out/**/*.js"
             ],
-            "preLaunchTask": "npm"
+            "preLaunchTask": "npm",
+            "env": {
+                //"NODE_DEBUG": "NET,CHILD_PROCESS,GFS4,STREAM,TIMER"
+            }
         },
         {
             "type": "qore",
             "request": "launch",
-            "name": "Launch Program",
+            "name": "Launch test-binary.q",
             "program": "${workspaceFolder}/test-binary.q"
         },
         {
@@ -63,9 +73,25 @@
         {
             "type": "qore",
             "request": "launch",
-            "name": "Ask for file name",
-            "program": "${workspaceFolder}/${command:AskForProgramName}",
+            "name": "Test launch options",
+            //"program": "${workspaceFolder}/${command:AskForProgramName}",
+            "program": "/home/tma/work/qore/qore/test/qore/debug/test-debug-script.q",
+            "logFilename": "/tmp/qvscdbg.log",
+            "appendToLog": true,
+            "fullException": true,
+            "define": ["TEST_DEFINE_VALUE=test", "TEST_DEFINE"],
+            "parseOptions": [
+                "PO_NEW_STYLE",
+            ],
+            "timeZone": "1",
+            "verbosity": 6,
             "stopOnEntry": true
+        },
+        {
+            "type": "qore",
+            "request": "launch",
+            "name": "Ask for file name",
+            "program": "${workspaceFolder}/${command:AskForProgramName}"
         }
     ]
 }

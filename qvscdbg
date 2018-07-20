@@ -18,6 +18,20 @@
 
 %exec-class DebugWrapper
 
+sub printErr(string fmt) {
+    string s = vsprintf(fmt, argv)+"\r\n";
+    stderr.print(s);
+    # in case of an exception when starting adapter the VSC does not print stderr output
+    # so get what is wrong is pain, intended to be uncommented only when required
+    # Unfamous "Debug adapter process has terminated unexpectedly" is such case
+%ifndef VDA_EARLY_LOG
+    File f();
+    f.open("/tmp/qdbgvsc.stderr", O_WRONLY|O_APPEND|O_CREAT);  # no O_TRUNC
+    f.printf("[pid %d] %s", getpid(), s);
+    f.close();
+%endif
+}
+
 class VscDebugAdapterLocal inherits VscDebugAdapter {
     public {
         DebugProgramControlLocal dpc;
@@ -183,7 +197,7 @@ class DebugWrapper {
             "define": "D,define=s@",
             "time_zone": "z,time-zone=s",
             #"exec_class": "x,exec-class:s",
-            "log_file": "l,logger-filename=s",
+            "logfile": "l,logger-filename=s",
             "append_to_log": "A,append-to-log",
             # for attach
             'url': 'a,attach=s',
@@ -199,12 +213,14 @@ class DebugWrapper {
     }
 
     constructor() {
+        printErr("QORE_ARGV: %y", QORE_ARGV);
+        printErr("ARGV: %y", ARGV);
         GetOpt g(opts);
         hash opt;
         try {
             opt = g.parse2(\ARGV);
         } catch (hash ex) {
-            stderr.printf("%s: %s\n", ex.err, ex.desc);
+            printErr("%s: %s", ex.err, ex.desc);
             help(-1);
         }
 
@@ -224,60 +240,72 @@ class DebugWrapper {
         if (opt.verbose) {
             logger.verbose = opt.verbose;
         }
-        if (opt.url) {
-            vda = new VscDebugAdapterRemote(opt);
-            string orig_url = opt.url;
-            try {
-                opt.url = get_connection_url(opt.url);
-            } catch (hash<ExceptionInfo> ex) {
-                if (ex.err != "CONNECTION-ERROR") {
-                    rethrow;
-                }
-                if (opt.url !~ /:\/\//) {
-                    throw "CONNECTION-ERROR", sprintf("URL %y is not a valid URL and no connection can be found with this name; connection providers searched (QORE_CONNECTION_PROVIDERS env var): %y", opt.url, ENV.QORE_CONNECTION_PROVIDERS);
-                }
-            }
-            if (orig_url != opt.url) {
-                if (opt.url =~ /^https?:\/+[^\/]+$/) {
-                    # use "debug" path if none present
-                    opt.url += "/debug";
-                }
-                if (opt.url =~ /^https?:/) {
-                    opt.url =~ s/^http/ws/;
-                }
-                logger.log(DUV_INFO, "Using connection %y url: %y\n", orig_url, opt.url);
-            }
-            switch (opt.url) {
-            case /^wss?:\/\//:
-                break;
-            case /^[a-zA-Z0-9_]+:\/\//:
-                throw "GETOPT-ERROR", "Url protocol is not ws://";
-            default:
-                opt.url = "ws://"+opt.url;
-            }
-        } else {
-            DebugProgramControlLocal dpcl();
-            vda = new VscDebugAdapterLocal(dpcl, opt);
-            dpcl.logger = logger;
-        }
-        vda.showFullException = exists opt.full_exception;
-        vda.logger = logger;
-        logger.debugAdapter = vda;
+        logger.log(DUV_INFO, "Adapter arguments: %y", QORE_ARGV);
         try {
+            if (opt.url) {
+                trim opt.url;
+                string orig_url = opt.url;
+                try {
+                    opt.url = get_connection_url(opt.url);
+                } catch (hash<ExceptionInfo> ex) {
+                    if (ex.err != "CONNECTION-ERROR") {
+                        rethrow;
+                    }
+                    if (opt.url !~ /:\/\//) {
+                        throw "CONNECTION-ERROR", sprintf("URL %y is not a valid URL and no connection can be found with this name; connection providers searched (QORE_CONNECTION_PROVIDERS env var): %y", opt.url, ENV.QORE_CONNECTION_PROVIDERS);
+                    }
+                }
+                if (orig_url != opt.url) {
+                    if (opt.url =~ /^https?:\/+[^\/]+$/) {
+                        # use "debug" path if none present
+                        opt.url += "/debug";
+                    }
+                    if (opt.url =~ /^https?:/) {
+                        opt.url =~ s/^http/ws/;
+                    }
+                    logger.log(DUV_INFO, "Using connection %y url: %y\n", orig_url, opt.url);
+                }
+                switch (opt.url) {
+                case /^wss?:\/\//:
+                    break;
+                case /^[a-zA-Z0-9_]+:\/\//:
+                    throw "GETOPT-ERROR", "Url protocol is not ws://";
+                default:
+                    opt.url = "ws://"+opt.url;
+                }
+                logger.log(DUV_DEBUG, "Connection url: %s", opt.url);
+                logger.log(DUV_DEBUG, "Create VscDebugAdapterRemote(%y) instance", opt.url);
+                vda = new VscDebugAdapterRemote(opt);
+            } else {
+                logger.log(DUV_DEBUG, "Create DebugProgramControlLocal instance");
+                DebugProgramControlLocal dpcl();
+                logger.log(DUV_DEBUG, "Create VscDebugAdapterLocal instance");
+                vda = new VscDebugAdapterLocal(dpcl, opt);
+                dpcl.logger = logger;
+            }
+            vda.showFullException = exists opt.full_exception;
+            vda.logger = logger;
+            logger.debugAdapter = vda;
+
             if (vda instanceof VscDebugAdapterRemote) {
+                logger.log(DUV_DEBUG, "Connect remote adapter");
                 cast<VscDebugAdapterRemote>(vda).wsc.connect();
             }
             #vda.init(opt);
+            logger.log(DUV_DEBUG, "Run vda adapter");
             vda.run();
 
             # resume any blocked debug threads
             if (vda instanceof VscDebugAdapterLocal) {
+                logger.log(DUV_DEBUG, "Shutdown local adapter");
                 cast<VscDebugAdapterLocal>(vda).dpc.shutdown();
             } else {
+                logger.log(DUV_DEBUG, "Disconnect remote adapter");
                 cast<VscDebugAdapterRemote>(vda).wsc.disconnect();
             }
         } catch (hash e) {
-            stderr.printf("%s: %s\n", e.err, e.desc);
+            logger.log(DUV_INFO, "%y", e);
+            printErr("%s: %s", e.err, e.desc);
             exit(-1);
         }
 
