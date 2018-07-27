@@ -57,7 +57,19 @@ export function activate(context: vscode.ExtensionContext) {
 	}));
 
     // register a configuration provider for 'qore' debug type
-	context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('qore', new QoreConfigurationProvider()));
+    context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('qore', new QoreConfigurationProvider()));
+    
+    context.subscriptions.push(vscode.debug.onDidStartDebugSession(session => {
+        console.log("extension.qore-debug-vscode.onDidStartDebugSession(session:"+JSON.stringify(session)+")");        
+    }));
+    context.subscriptions.push(vscode.debug.onDidTerminateDebugSession(session => {
+        console.log("extension.qore-debug-vscode.onDidTerminateDebugSession(session:"+JSON.stringify(session)+")");        
+    }));
+    // loaded scripts
+    //vscode.window.registerTreeDataProvider('extension.qore-debug-vscode.loadedScriptsExplorer', new loadedScripts_1.LoadedScriptsProvider(context))
+    //context.subscriptions.push(vscode.commands.registerCommand('extension.qore-debug-vscode.pickLoadedScript', loadedScripts_1.pickLoadedScript));
+    //context.subscriptions.push(vscode.commands.registerCommand('extension.qore-debug-vscode.openScript', (session, source) => loadedScripts_1.openS
+    
 }
 
 export function deactivate() {

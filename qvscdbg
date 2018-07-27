@@ -164,6 +164,7 @@ class VscDebugAdapterRemote inherits VscDebugAdapter {
                     return;
                 }
             }
+            pushEvent(d);
             printData(d);
         } catch (hash<ExceptionInfo> ex) {
             wscErr(sprintf("wscEvent: %y", ex));
@@ -206,6 +207,8 @@ class DebugWrapper {
             'timeout': 't,timeout=i',
             'connect_timeout': 'c,conn-timeout=i',
             'response_timeout': 'w,resp-timeout=i',
+            # exec command
+            'execute': 'X,execute=s',
 
         );
         VscDebugAdapter vda;
@@ -292,8 +295,13 @@ class DebugWrapper {
                 cast<VscDebugAdapterRemote>(vda).wsc.connect();
             }
             #vda.init(opt);
-            logger.log(DUV_DEBUG, "Run vda adapter");
-            vda.run();
+            if (opt.execute) {
+                logger.log(DUV_DEBUG, "Execute command: %y");
+                vda.execute(opt.execute);
+            } else {
+                logger.log(DUV_DEBUG, "Run vda adapter");
+                vda.run();
+            }
 
             # resume any blocked debug threads
             if (vda instanceof VscDebugAdapterLocal) {
@@ -336,7 +344,11 @@ class DebugWrapper {
             "  -f, --full-exception         show full exception info\n"
             "\n"
             "  -l,--logger-filename name    logger filename\n"
-            "  -A,--append-to-log           append to logfile\n",
+            "  -A,--append-to-log           append to logfile\n"
+            "\n"
+            "  -X,-execute=<command>        execute command, print result as JSON and exit\n"
+            "Commands:\n"
+            "  pgmlist                      list all programs\n"
 
             "\n"
             "Example:\n"

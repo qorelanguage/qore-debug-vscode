@@ -83,7 +83,7 @@ module VscDebugAdapter {
 public namespace VscDebugAdapter {
 
     #! class that can be used for logging
-    public class VscDebugLogger inherits DebugLogger{
+    public class VscDebugLogger inherits DebugLogger {
         private:internal {
             *string m_filename;
             File m_file;
@@ -179,6 +179,9 @@ public namespace VscDebugAdapter {
 
             # Sequence for events passed to VSC frontend
             Sequence m_sequence(1);
+
+            # Sequence for loaded source reference
+            Sequence m_source(1);
 
             # vsc program
             int m_currentPgmId;
@@ -308,6 +311,19 @@ public namespace VscDebugAdapter {
             }
         }
 
+        # execute command (and exit)
+        public execute(string cmd) {
+            auto res;
+            switch (cmd) {
+                case 'pgmlist':
+                    res = doCommand(('cmd': 'program//list', 'listFiles': True));
+                    break;
+                default:
+                    throw "VDA-ERROR", sprintf("Unknown command: %y", cmd);
+            }
+            stdout.write(make_json(res)+"\r\n");
+        }
+
         private:internal auto resolveValue(string name, *string val, hash strings, auto defVal) {
             if (exists val) {
                 if (!exists strings{val}) {
@@ -322,8 +338,8 @@ public namespace VscDebugAdapter {
         #! process event from debugger
         private:internal processDebugEvent(hash event) {
             if (exists event.pgmid) {
-                if (!exists m_programState{event.pgmid}.info) {
-                    updateProgramCache(doCommand(("cmd": "program/="+event.pgmid+"/list")));
+                if (!exists m_programState{event.pgmid}.info || !exists m_programState{event.pgmid}.loadedSourceById) {
+                    updateProgramCache(doCommand(("cmd": "program/="+event.pgmid+"/list", "listFiles": True)));
                 }
             }
             log(DUV_DEBUG_1, "processDebugEvent: %y", event);
@@ -496,6 +512,14 @@ public namespace VscDebugAdapter {
             sendVscMessage(h);
         }
 
+        private:internal string getLoadedSourceName(string file, *string source) {
+            if (exists source) {
+                return file + '@' + source;
+            } else {
+                return file;
+            }
+        }
+
         private:internal updateProgramCache(*hash response) {
             foreach string pgmId in (keys response.result) {
                 hash e;
@@ -507,6 +531,45 @@ public namespace VscDebugAdapter {
                 m_programState{pgmId}.info = response.result{pgmId};
                 e.module = getModule(pgmId);
                 sendVscEvent("module", e);
+                remove e;
+                if (response.result{pgmId}.debugging) {
+                    foreach string f in (keys response.result{pgmId}.files) {
+                        string lsn = getLoadedSourceName(f);
+                        *hash ls = m_programState{pgmId}.loadedSourceByName{lsn};
+                        if (!exists ls) {
+                            ls = (
+                                'id': m_source.next(),
+                                'file': f,
+                            );
+                            m_programState{pgmId}.loadedSourceByName{lsn} = ls;
+                            m_programState{pgmId}.loadedSourceById{ls.id} = ls;
+                            e.reason = "new";
+                        } else {
+                            e.reason = "changed";
+                        }
+                        e.source = getSource(ls);
+                        sendVscEvent("loadedSource", e);
+
+                        foreach string l in (keys response.result{pgmId}.files{f}) {
+                            lsn = getLoadedSourceName(l, f);
+                            ls = m_programState{pgmId}.loadedSourceByName{lsn};
+                            if (!exists ls) {
+                                ls = (
+                                    'id': m_source.next(), 
+                                    'file': l,
+                                    'source': f,
+                                );
+                                m_programState{pgmId}.loadedSourceByName{lsn} = ls;
+                                m_programState{pgmId}.loadedSourceById{ls.id} = ls;
+                                e.reason = "new";
+                            } else {
+                                e.reason = "changed";
+                            }
+                            e.source = getSource(ls);
+                            sendVscEvent("loadedSource", e);
+                        }
+                    }
+                }
             }
         }
 
@@ -597,6 +660,25 @@ public namespace VscDebugAdapter {
             m.file = m_programState{pgmId}.info.scriptPath;
             m.isUserCode = m_programState{pgmId}.info.debugging;
             return m;
+        }
+
+        private:internal hash getSource(hash ls) {
+            hash src;
+            src.name = exists ls.label ? sprintf("Label: %s", ls.label) : sprintf("File: %s", ls.file);     
+            src.sourceReference = ls.id;
+            src.path = /*ls.source ??*/ ls.file;
+            if (src.path =~ /^<(.*)>$/) {
+                src.path =~ s/^<run-time-loaded: (.*)>$/$1/;
+                # tricky as all breakpoint commands are hidden in VSC if path does not satisfy its format
+                # trial/error I found it need an extension             
+                src.path += '.q';
+            }
+            #src.presentationHint = "normal";
+            #src.origin =
+            #src.sources = 
+            #src.adapterData = 
+            #src.checksums = ( ('algorithm': 'SHA1', 'checksum': ))
+            return src;
         }
 
         # get threads provided to vsc
@@ -748,20 +830,14 @@ public namespace VscDebugAdapter {
                 hash sf;
                 sf.id = (args.threadId << 16) + i; #! An identifier for the stack frame. It must be unique across all threads.
                 sf.name = sprintf("%s: %s", l[i].function, l[i].type);
-                sf.source.name = l[i].file;
-                sf.source.path = l[i].source ?? l[i].file;
-                # to retrieve the SourceRequest, sourceReference > 0
-                sf.source.sourceReference = 0;
-                # An optional hint for how to present the source in the UI. A value of 'deemphasize' can be used to indicate that the source is not available or that it is skipped on stepping.
-                sf.source.presentationHint = "normal"; # 'normal' | 'emphasize' | 'deemphasize'
-                # The (optional) origin of this source: possible values 'internal module', 'inlined content from source map', etc.
-                # sf.source.origin =
-                # An optional list of sources that are related to this source. These may be the source that generated this source.
-                # sources?: Source[];
-                # Optional data that a debug adapter might want to loop through the client. The client should leave the data intact and persist it across sessions. The client should not interpret the data
-                # adapterData?: any;
-                # The checksums associated with this file
-                # checksums?: Checksum[];
+                *hash ls = m_programState{m_currentPgmId}.loadedSourceByName{getLoadedSourceName(l[i].file, l[i].source)};
+                if (exists ls) {
+                    sf.source = getSource(ls);
+                } else {                
+                    sf.source.path = l[i].file;
+                    sf.source.sourceReference = 0;
+                    sf.source.presentationHint = "deemphasize";
+                }
                 sf.line = l[i].line;
                 sf.column = 0;
                 sf.endline = l[i].endline;
@@ -977,19 +1053,27 @@ public namespace VscDebugAdapter {
         }
 
         public hash vsc_setBreakpoints(hash args) {
-            string name = args.source.path;
-            deleteBreakpoints(m_programState{m_currentPgmId}.sourceBreakpoints{name});
-            remove m_programState{m_currentPgmId}.sourceBreakpoints{name};
+            string sourceId = args.source.path;
+            string file = sourceId;
+            if (args.source.sourceReference > 0) { # always ?? Probably not when launching script
+                *hash ls = m_programState{m_currentPgmId}.loadedSourceById{args.source.sourceReference};
+                if (ls) {
+                    sourceId = string(ls.id);
+                    file = ls.file;
+                }
+            }
+            deleteBreakpoints(m_programState{m_currentPgmId}.sourceBreakpoints{sourceId});
+            remove m_programState{m_currentPgmId}.sourceBreakpoints{sourceId};
             hash res.breakpoints = ();
             if (args.breakpoints) {
                 list bkpts;
                 foreach hash b in (args.breakpoints) {
-                    push bkpts, ("file": args.source.path, "lineno": b.line); # +b.("condition", "hitCondition", "logMessage");
+                    push bkpts, ("file": file, "lineno": b.line); # +b.("condition", "hitCondition", "logMessage");
                 }
                 res.breakpoints = setBreakpoints(bkpts);
                 foreach hash b in (\res.breakpoints) {
                     if (b.verified) {
-                        m_programState{m_currentPgmId}.sourceBreakpoints{name}{b.id} = b + args.breakpoints[$#];
+                        m_programState{m_currentPgmId}.sourceBreakpoints{sourceId}{b.id} = b + args.breakpoints[$#];
                         remove b.statementId;
                     }
                 }
@@ -1044,6 +1128,35 @@ public namespace VscDebugAdapter {
                 push res.modules, getModule((keys m_programState)[i]);
             }
             res.totalModules = m_programState.size();
+            return res;
+        }
+
+        public hash vsc_loadedSources() {
+            hash res.sources = ();
+            if (m_currentPgmId) {
+                foreach int id in (keys m_programState{m_currentPgmId}.loadedSourceById) {
+                    push res.sources, getSource(m_programState{m_currentPgmId}.loadedSourceById{id});
+                } 
+            }
+            return res;
+        }
+
+        public hash vsc_source(hash args) {
+            hash res.content = '';
+            if (m_currentPgmId) { # TOOD: or do we need it global ?
+                *hash ls = m_programState{m_currentPgmId}.loadedSourceById{args.sourceReference};
+                if (exists ls.source) {
+                    res.content = doCommand((
+                        "cmd": "program/"+m_currentPgmId+"/label/source",
+                        "label": ls.file,
+                    )).result.code;
+                } else if (exists ls.file) {
+                    res.content = doCommand((
+                        "cmd": "program/"+m_currentPgmId+"/file/source",
+                        "file": ls.file,
+                    )).result.code;
+                }
+            }
             return res;
         }
 
@@ -1112,7 +1225,7 @@ public namespace VscDebugAdapter {
                 #"additionalModuleColumns": ColumnDescriptor[],
 
                 /* Checksum algorithms supported by the debug adapter. */
-                #"supportedChecksumAlgorithms": ChecksumAlgorithm[],
+                "supportedChecksumAlgorithms": ('SHA1'),
 
                 /* The debug adapter supports the RestartRequest. In this case
                     a client should not implement 'restart' by terminating and
@@ -1140,7 +1253,7 @@ public namespace VscDebugAdapter {
                 "supportsDelayedStackTraceLoading": True,
 
                 /* The debug adapter supports the 'loadedSources' request. */
-                "supportsLoadedSourcesRequest": False,
+                "supportsLoadedSourcesRequest": True,
 
                 /* The debug adapter supports logpoints by interpreting the 'logMessage' attribute of the SourceBreakpoint. */
                 "supportsLogPoints": False,   # not supported in GUI ?
