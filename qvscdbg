@@ -103,6 +103,7 @@ class VscDebugAdapterRemote inherits VscDebugAdapter {
         bool connecting;
         string serverName;
         string url;
+        *hash headers;
     }
 
     constructor (hash opts): VscDebugAdapter() {
@@ -111,6 +112,14 @@ class VscDebugAdapterRemote inherits VscDebugAdapter {
         opts.errlog = \wscErr();
         opts.debuglog = \wscDebug();
         url = opts.url;
+        if (opts.header) {
+            foreach string h in (opts.header) {
+                *list<string> rv = regex_extract(h, "(\\w+)=(\\w+)");
+                if (!rv)
+                    throw "GETOPT-ERROR", "Wrong hedaer specification";
+                headers{rv[0]} = rv[1];
+            }
+        }
         wsc = new WebSocketClient(\wscEvent(), opts);
     }
 
@@ -136,7 +145,7 @@ class VscDebugAdapterRemote inherits VscDebugAdapter {
     public nothing connect() {
         connecting = True;
         counter.inc();
-        hash hh = wsc.connect();
+        hash hh = wsc.connect({"hdr": headers});
         *string prot_ver = hh{QoreDebugWsProtocolHeader.lwr()};
         if (!prot_ver.val())
             throw "QORE-DEBUG", sprintf("Connected to %y, but no %y header received in response; check the URI path and try again", url, QoreDebugWsProtocolHeader);
@@ -202,6 +211,7 @@ class DebugWrapper {
             "append_to_log": "A,append-to-log",
             # for attach
             'url': 'a,attach=s',
+            'header': 'H,header=s@',
             'max_redirects': 'm,max-redir=i',
             'proxy': 'P,proxy=s',
             'timeout': 't,timeout=i',
@@ -292,7 +302,7 @@ class DebugWrapper {
 
             if (vda instanceof VscDebugAdapterRemote) {
                 logger.log(DUV_DEBUG, "Connect remote adapter");
-                cast<VscDebugAdapterRemote>(vda).wsc.connect();
+                cast<VscDebugAdapterRemote>(vda).connect();
             }
             #vda.init(opt);
             if (opt.execute) {
@@ -334,13 +344,14 @@ class DebugWrapper {
             "\n"
             "Attach to debug server:\n"
             "  -a,--attach=url              connect to remote debug server, e.g. wss://localhost:8001/debug\n"
+            "  -H,--header=<hdr>=<val>      headers for connection request\n"
             "  -m,--max-redir=<num>         the maximum number of redirects before throwing an exception (the default is 5)\n"
             "  -P,--proxy=<url>             the proxy URL for connecting through a proxy\n"
             "  -t,--timeout=<ms>            the timeout\n"
             "  -c,--conn-timeout=<ms>       the timeout for establishing a new socket connection\n"
             "  -w,--resp-timeout=<ms>       the timeout to wait for websocket response, default: %d\n"
             "\n"
-            "  -v     verbose\n"
+            "  -v,--verbose                 increase verbosity\n"
             "  -f, --full-exception         show full exception info\n"
             "\n"
             "  -l,--logger-filename name    logger filename\n"

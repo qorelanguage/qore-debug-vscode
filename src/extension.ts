@@ -1,34 +1,8 @@
 'use strict';
 
 import * as vscode from 'vscode';
-import { WorkspaceFolder, DebugConfiguration/*, DebugAdapterExecutable*/, ProviderResult, CancellationToken } from 'vscode';
-//import { IDebugAdapter, IAdapterExecutable } from 'vs/workbench/parts/debug/common/debug';
+import { WorkspaceFolder, DebugConfiguration, ProviderResult, CancellationToken } from 'vscode';
 
-// TODO: currently in vscode.proposed
-/**
- * Represents a debug adapter executable and optional arguments passed to it.
- */
-class DebugAdapterExecutable /* implements vscode.IAdapterExecutable */ {
-    /**
-     * The command path of the debug adapter executable.
-     * A command must be either an absolute path or the name of an executable looked up via the PATH environment variable.
-     * The special value 'node' will be mapped to VS Code's built-in node runtime.
-     */
-    readonly command: string;
-
-    /**
-     * Optional arguments passed to the debug adapter executable.
-     */
-    readonly args?: string[];
-
-    /**
-     * Create a new debug adapter specification.
-     */
-    constructor(command: string, args?: string[]) {
-        this.command = command;
-        this.args = args;
-    }
-}
 
 // tutorial abouut "=>" https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/Arrow_functions
 export function activate(context: vscode.ExtensionContext) {
@@ -57,7 +31,7 @@ export function activate(context: vscode.ExtensionContext) {
 	}));
 
     // register a configuration provider for 'qore' debug type
-    context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('qore', new QoreConfigurationProvider()));
+    context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('qore', new QoreConfigurationProvider(context)));
     
     context.subscriptions.push(vscode.debug.onDidStartDebugSession(session => {
         console.log("extension.qore-debug-vscode.onDidStartDebugSession(session:"+JSON.stringify(session)+")");        
@@ -77,8 +51,18 @@ export function deactivate() {
 }
 
 class QoreConfigurationProvider implements vscode.DebugConfigurationProvider {
+    private _context: vscode.ExtensionContext;
     private _executable: string;
     private _args: string[];
+
+    constructor (context: vscode.ExtensionContext) {
+        this._context = context;
+        // "Converting circular structure to JSON" when using JSON.stringify()
+        // util.inspect() is proposed fix but it has another issue so limit depth
+        var util = require('util');
+        console.log("QoreConfigurationProvider(context: "+ util.inspect(context, {depth: 1}));
+    }
+
     /**
         Massage a debug configuration just before a debug session is being launched,
         e.g. add all missing attributes to the debug configuration.
@@ -97,8 +81,7 @@ class QoreConfigurationProvider implements vscode.DebugConfigurationProvider {
                 config.stopOnEntry = true;  // TODO: not yet supported
             }
         }
-        this._args = ["/home/tma/work/qore/qore-debug-vscode/qvscdbg"];
-        //this._args = ["./qvscdbg"];  // qore CWD is not in this folder!
+        this._args = [this._context.extensionPath +  "/qvscdbg"];
         if (config.request === 'attach') {
             if (!config.connection) {
                 return vscode.window.showInformationMessage("Connection string not specified").then(_ => {
@@ -176,8 +159,9 @@ class QoreConfigurationProvider implements vscode.DebugConfigurationProvider {
         return config;
     }
 
-    debugAdapterExecutable?(folder: WorkspaceFolder | undefined, token?: CancellationToken): ProviderResult<DebugAdapterExecutable> {
+    debugAdapterExecutable?(folder: WorkspaceFolder | undefined, token?: CancellationToken): ProviderResult<vscode.DebugAdapterExecutable> {
         console.log("debugAdapterExecutable(folder: "+JSON.stringify(folder)+")");
-        console.log("Qore debug adapter: "+this._executable+" args:"+this._args);
-        return new DebugAdapterExecutable(this._executable, this._args);   }
+        console.log("Qore debug adapter: "+this._executable+" args: "+JSON.stringify(this._args));
+        return new vscode.DebugAdapterExecutable(this._executable, this._args);
+    }
 }

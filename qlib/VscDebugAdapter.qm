@@ -727,6 +727,7 @@ public namespace VscDebugAdapter {
             if (args.program =~ /^[0-9]+$/) {
                 pgmId = args.program;
             } else {
+log(DUV_INFO, "ATTACH: %N", m_programState);
                 foreach string pgmId2 in (keys m_programState) {
                     if (m_programState{pgmId2}.info.scriptName == args.program) {
                         pgmId = pgmId2;
@@ -737,7 +738,7 @@ public namespace VscDebugAdapter {
                     throw "VDA-ERROR", sprintf("Cannot resolve program %y", args.program);
                 }
             }
-            hash p = doCommand((
+            *hash p = doCommand((
                 "cmd": "program/"+pgmId+"/add",
             ));
             m_currentPgmId = int(pgmId);
@@ -833,7 +834,7 @@ public namespace VscDebugAdapter {
                 *hash ls = m_programState{m_currentPgmId}.loadedSourceByName{getLoadedSourceName(l[i].file, l[i].source)};
                 if (exists ls) {
                     sf.source = getSource(ls);
-                } else {                
+                } else {
                     sf.source.path = l[i].file;
                     sf.source.sourceReference = 0;
                     sf.source.presentationHint = "deemphasize";
@@ -1134,7 +1135,7 @@ public namespace VscDebugAdapter {
         public hash vsc_loadedSources() {
             hash res.sources = ();
             if (m_currentPgmId) {
-                foreach int id in (keys m_programState{m_currentPgmId}.loadedSourceById) {
+                foreach string id in (keys m_programState{m_currentPgmId}.loadedSourceById) {
                     push res.sources, getSource(m_programState{m_currentPgmId}.loadedSourceById{id});
                 } 
             }
@@ -1213,7 +1214,7 @@ public namespace VscDebugAdapter {
                 "supportsGotoTargetsRequest": False,
 
                 /* The debug adapter supports the stepInTargetsRequest. */
-                "supportsStepInTargetsRequest": True,
+                "supportsStepInTargetsRequest": False,
 
                 /* The debug adapter supports the completionsRequest. */
                 "supportsCompletionsRequest": True,
