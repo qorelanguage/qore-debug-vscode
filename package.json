@@ -184,6 +184,13 @@
                                 "description": "URL or connection name to connect remote debug server, e.g. ws://socket=<url_encoded_path>/path",
                                 "default": "${command:AskForConection}"
                             },
+                            "headers": {
+                                "type": "array",
+                                "description": "HTTP headers for websocket connection request (each header is object containing 2 properties 'name' and 'value' as strings)",
+                                "items": {
+                                    "type": "object"
+                                }
+                            },
                             "program": {
                                 "type": "string",
                                 "description": "Program name or id",

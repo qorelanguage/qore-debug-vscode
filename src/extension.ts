@@ -123,6 +123,17 @@ class QoreConfigurationProvider implements vscode.DebugConfigurationProvider {
                 this._args.push("--resp-timeout");
                 this._args.push(config.respTimeout);
             }
+            if (typeof config.headers !== "undefined") {
+                for (var _hdr of config.headers) {
+                    if (typeof _hdr.name !== "string" || typeof _hdr.value !== "string") {
+                        return vscode.window.showInformationMessage("Wrong name or value for a header in: "+JSON.stringify(_hdr)).then(_ => {
+                            return undefined;	// abort launch
+                        });
+                    }
+                    this._args.push("--header");
+                    this._args.push(_hdr.name + "=" + _hdr.value);
+                }
+            }
         } else {
             if (!config.program) {
                 return vscode.window.showInformationMessage("Cannot find a program to debug").then(_ => {

@@ -114,9 +114,9 @@ class VscDebugAdapterRemote inherits VscDebugAdapter {
         url = opts.url;
         if (opts.header) {
             foreach string h in (opts.header) {
-                *list<string> rv = regex_extract(h, "(\\w+)=(\\w+)");
+                *list<string> rv = regex_extract(h, "^([a-zA-Z0-9\\-]+)=(.*)$");
                 if (!rv)
-                    throw "GETOPT-ERROR", "Wrong hedaer specification";
+                    throw "GETOPT-ERROR", sprintf("Wrong header specification %y", h);
                 headers{rv[0]} = rv[1];
             }
         }
