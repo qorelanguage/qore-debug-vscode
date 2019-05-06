@@ -39,6 +39,12 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(vscode.debug.onDidTerminateDebugSession(session => {
         console.log("extension.qore-debug-vscode.onDidTerminateDebugSession(session:"+JSON.stringify(session)+")");        
     }));
+    /*context.subscriptions.push(vscode.debug.onDidChangeActiveDebugSession(session => {
+        console.log("extension.qore-debug-vscode.onDidChangeActiveDebugSession(session:" + JSON.stringify(session) + ")");
+    }));*/
+    /*context.subscriptions.push(vscode.debug.onDidReceiveDebugSessionCustomEvent(event => {
+        console.log("extension.qore-debug-vscode.onDidReceiveDebugSessionCustomEvent(event:" + JSON.stringify(event) + ")");
+    }));*/
     // loaded scripts
     //vscode.window.registerTreeDataProvider('extension.qore-debug-vscode.loadedScriptsExplorer', new loadedScripts_1.LoadedScriptsProvider(context))
     //context.subscriptions.push(vscode.commands.registerCommand('extension.qore-debug-vscode.pickLoadedScript', loadedScripts_1.pickLoadedScript));
@@ -81,7 +87,9 @@ class QoreConfigurationProvider implements vscode.DebugConfigurationProvider {
                 config.stopOnEntry = true;  // TODO: not yet supported
             }
         }
-        this._args = [this._context.extensionPath +  "/qvscdbg"];
+        // modify file name to "/qvscdbg-test" and executable to "bash" just in case the adapter silently won't start and check command it log
+        this._args = [this._context.extensionPath + "/qvscdbg"];
+        this._executable = "qore";   // no slash to have relative path
         if (config.request === 'attach') {
             if (!config.connection) {
                 return vscode.window.showInformationMessage("Connection string not specified").then(_ => {
@@ -138,12 +146,6 @@ class QoreConfigurationProvider implements vscode.DebugConfigurationProvider {
                 this._args.push(config.timeZone);
             }
         }
-        if (config.verbosity > 0) {
-            let i;
-            for (i=0; i<config.verbosity; i++) {
-                this._args.push("-v");
-            }
-        }
         if (config.fullException) {
             this._args.push("--full-exception");
         }
@@ -154,7 +156,12 @@ class QoreConfigurationProvider implements vscode.DebugConfigurationProvider {
         if (config.appendToLog) {
             this._args.push("--append-to-log");
         }
-        this._executable = "qore";   // no slash to have relative path
+        if (config.verbosity > 0) {
+            let i;
+            for (i=0; i<config.verbosity; i++) {
+                this._args.push("-v");
+            }
+        }
         console.log("config:"+JSON.stringify(config));
         return config;
     }
