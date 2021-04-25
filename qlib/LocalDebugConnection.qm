@@ -225,8 +225,7 @@ public class LocalDebugConnection inherits AbstractDebugConnection {
                 server.terminate();
                 delete server;
             }
-        }
-        catch (ex) {}
+        } catch () {}
     }
 
     private connect() {
