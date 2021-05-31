@@ -112,8 +112,7 @@ class QoreDebugAdapter inherits DebugEventListener {
             if (!d.chdir(dirname(logFilePath))) {
                 try {
                     d.create(0755);
-                }
-                catch (e) {
+                } catch (hash<ExceptionInfo> ex) {
                     canOpenLog = False;
                     return;
                 }
@@ -124,8 +123,7 @@ class QoreDebugAdapter inherits DebugEventListener {
                 FileOutputStream fos(logFile, appendToLog);
                 fos.close();
                 canOpenLog = True;
-            }
-            catch (e) {
+            } catch (hash<ExceptionInfo> ex) {
                 canOpenLog = False;
             }
         }
@@ -226,8 +224,7 @@ class QoreDebugAdapter inherits DebugEventListener {
         try {
             # TODO - depending on the parameters, start the appropriate debug connection
             debugger = new LocalDebugConnection(self, params);
-        }
-        catch (hash ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ex;
         }
         return NOTHING;
@@ -238,8 +235,7 @@ class QoreDebugAdapter inherits DebugEventListener {
             if (debugger)
                 debugger.disconnect(terminate);
             delete debugger;
-        }
-        catch (hash ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ex;
         }
         return NOTHING;
@@ -355,8 +351,7 @@ class QoreDebugAdapter inherits DebugEventListener {
         # try launching
         try {
             result = debugger.launch();
-        }
-        catch (hash<ExceptionInfo> ex) {
+        } catch (hash<ExceptionInfo> ex) {
             stderr.printf("Error during program launch:\n%N\n", ex);
             return Response::error(request, ex, "Error during program launch");
         }
@@ -449,8 +444,7 @@ class QoreDebugAdapter inherits DebugEventListener {
         # call the debugger
         try {
             debugger.continue_(request.arguments.threadId);
-        }
-        catch(ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ErrorResponse::commandFailed(request, ex);
         }
 
@@ -467,8 +461,7 @@ class QoreDebugAdapter inherits DebugEventListener {
         # call the debugger
         try {
             debugger.next(request.arguments.threadId);
-        }
-        catch(ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ErrorResponse::commandFailed(request, ex);
         }
 
@@ -485,8 +478,7 @@ class QoreDebugAdapter inherits DebugEventListener {
         # call the debugger
         try {
             debugger.pause(request.arguments.threadId);
-        }
-        catch(ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ErrorResponse::commandFailed(request, ex);
         }
 
@@ -503,8 +495,7 @@ class QoreDebugAdapter inherits DebugEventListener {
         # call the debugger
         try {
             debugger.stepIn(request.arguments.threadId, request.arguments.targetId);
-        }
-        catch(ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ErrorResponse::commandFailed(request, ex);
         }
 
@@ -521,8 +512,7 @@ class QoreDebugAdapter inherits DebugEventListener {
         # call the debugger
         try {
             debugger.stepOut(request.arguments.threadId);
-        }
-        catch(ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ErrorResponse::commandFailed(request, ex);
         }
 
@@ -575,8 +565,7 @@ class QoreDebugAdapter inherits DebugEventListener {
                 request.arguments.levels,
                 request.arguments.format
             );
-        }
-        catch(ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ErrorResponse::commandFailed(request, ex);
         }
 
@@ -594,8 +583,7 @@ class QoreDebugAdapter inherits DebugEventListener {
         hash body;
         try {
             body = debugger.scopes(request.arguments.frameId);
-        }
-        catch(ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ErrorResponse::commandFailed(request, ex);
         }
 
@@ -619,8 +607,7 @@ class QoreDebugAdapter inherits DebugEventListener {
                 request.arguments.count,
                 request.arguments.format
             );
-        }
-        catch(ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ErrorResponse::commandFailed(request, ex);
         }
 
@@ -641,8 +628,7 @@ class QoreDebugAdapter inherits DebugEventListener {
                 request.arguments.sourceReference,
                 request.arguments.source
             );
-        }
-        catch(ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ErrorResponse::commandFailed(request, ex);
         }
 
@@ -655,8 +641,7 @@ class QoreDebugAdapter inherits DebugEventListener {
         *list threads;
         try {
             threads = debugger.threads();
-        }
-        catch(ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ErrorResponse::commandFailed(request, ex);
         }
 
@@ -677,8 +662,7 @@ class QoreDebugAdapter inherits DebugEventListener {
                 request.arguments.startModule,
                 request.arguments.moduleCount
             );
-        }
-        catch(ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ErrorResponse::commandFailed(request, ex);
         }
 
@@ -701,8 +685,7 @@ class QoreDebugAdapter inherits DebugEventListener {
                 request.arguments.context,
                 request.arguments.format
             );
-        }
-        catch(ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ErrorResponse::commandFailed(request, ex);
         }
 
@@ -735,8 +718,7 @@ class QoreDebugAdapter inherits DebugEventListener {
         hash body;
         try {
             body = debugger.exceptionInfo(request.arguments.threadId);
-        }
-        catch(ex) {
+        } catch (hash<ExceptionInfo> ex) {
             return ErrorResponse::commandFailed(request, ex);
         }
 
